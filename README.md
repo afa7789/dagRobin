@@ -1,362 +1,322 @@
 # dagRobin
 
-DAG-based task manager for autonomous agents.
-
-[![Crates.io](https://img.shields.io/crates/v/dagrobin)](https://crates.io/crates/dag-robin)
-[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](./LICENSE)
-
 ![dagRobin](./resources/dagRobin.png)
 
-## Overview
+**The task manager that actually helps you get things done.**
 
-dagRobin is a CLI tool for managing tasks with native DAG (Directed Acyclic Graph) support. It serves as a single source of truth for autonomous agents and human teams, enabling fast queries, batch updates, and dependency visualization.
+Ever feel lost about what to do next? dagRobin keeps track of your tasks and their dependencies, so you always know exactly what can be worked on right now.
+
+---
+
+### The Simple Version
+
+Think of dagRobin like a to-do list on steroids. You can say things like:
+- "First I need to set up the database"
+- "Then I can build the API"
+- "Finally, I can write tests"
+
+dagRobin figures out what you can actually do right now, and what you need to wait for.
+
+---
+
+## Quick Examples
+
+```bash
+# "I need to do this first"
+dagRobin add setup-db "Setup the database" --priority 1
+
+# "This depends on the database being done"
+dagRobin add build-api "Build the API" --deps setup-db --priority 2
+
+# "What can I work on right now?"
+dagRobin ready
+
+# "Show me everything"
+dagRobin list
+
+# "I finished the database!"
+dagRobin update setup-db --status done
+
+# "Now what can I do?"
+dagRobin ready
+```
+
+---
 
 ## Features
 
-- DAG-based dependencies between tasks
-- Automatic detection of tasks ready for execution
-- Multiple output formats: Table, JSON, YAML
-- Graph visualization: ASCII, DOT, Mermaid
-- Fast queries using embedded Sled database
-- Atomic operations for data consistency
+- **Dependencies made easy** - Tell dagRobin what depends on what, it handles the rest
+- **Always know what's next** - The `ready` command shows only tasks you can actually do now
+- **See the big picture** - Visualize your task graph in ASCII, Mermaid, or DOT format
+- **Multiple agents, one source of truth** - Perfect for coordinating multiple AI agents
+- **Fast and lightweight** - Built in Rust, database embedded in a single file
+- **Export/Import** - Share task lists as YAML files
+
+---
 
 ## Installation
 
 ```bash
+# Clone the repo
+git clone https://github.com/afa7789/dagRobin.git
+cd dagRobin
+
+# Build from source
 cargo build --release
+
+# Run directly
+./target/release/dagRobin --help
+
+# Or install globally
 cargo install --path .
 ```
 
-## Quick Start
+---
+
+## Day-to-Day Usage
+
+### Adding Tasks
 
 ```bash
-# Add tasks
-dagRobin add t1 "Setup database" --priority 1
-dagRobin add t2 "API implementation" --deps t1 --priority 2
+# Simple task
+dagRobin add t1 "Write documentation"
 
-# List and query
+# With priority (lower = more important)
+dagRobin add t2 "Fix critical bug" --priority 1
+
+# With dependencies
+dagRobin add t3 "Add tests" --deps t2
+
+# With tags (for filtering)
+dagRobin add t4 "Update README" --tags docs,ux
+
+# With file context (know which files a task touches)
+dagRobin add t5 "Refactor auth" --files "src/auth.rs,middleware.rs"
+```
+
+### Checking What to Do
+
+```bash
+# What's ready to work on?
+dagRobin ready
+
+# Show everything
 dagRobin list
-dagRobin ready --format yaml
-dagRobin blocked
 
-# Update status
+# Only pending tasks
+dagRobin list --status pending
+
+# Filter by tag
+dagRobin list --tags backend
+
+# Show blocked tasks (waiting on something)
+dagRobin blocked
+```
+
+### Updating Tasks
+
+```bash
+# Mark as done
 dagRobin update t1 --status done
 
-# Visualize
-dagRobin graph --format mermaid
+# Change title
+dagRobin update t1 --title "New title"
+
+# Add notes/metadata
+dagRobin update t1 --metadata "notes=This was tricky, took 2 hours"
 ```
+
+### Visualization
+
+```bash
+# See the dependency graph
+dagRobin graph
+
+# Mermaid format (great for Markdown)
+dagRobin graph --format mermaid
+
+# Save to file
+dagRobin graph --format dot --output diagram.dot
+```
+
+### Import/Export
+
+```bash
+# Save all tasks to a file
+dagRobin export my-tasks.yaml
+
+# Share with someone else
+dagRobin import their-tasks.yaml --merge
+
+# Replace everything
+dagRobin import fresh-start.yaml --replace
+```
+
+---
+
+## For AI Agents
+
+dagRobin is designed for autonomous agents working together. Add this to your project's CLAUDE.md or similar:
+
+```markdown
+# Task Management
+
+This project uses dagRobin for task coordination.
 
 ## Commands
+- `dagRobin ready` - What can I work on?
+- `dagRobin list` - Show all tasks
+- `dagRobin graph --format mermaid` - Visualize dependencies
 
-### add
-
-Create a new task.
-
-```bash
-dagRobin add <id> <title> [options]
-
-Options:
-  -p, --priority <n>      Priority (1-10, lower is higher)
-  -d, --deps <ids>        Dependency task IDs
-  -t, --tags <tags>       Comma-separated tags
-  --files <paths>          Affected file paths
-  --description <text>     Task description
+## Workflow
+1. Start: run `dagRobin ready`
+2. Pick a task, mark it `in_progress` with your agent name
+3. Work on it, mark it `done` when finished
+4. Repeat
 ```
 
-### list
+**Why agents love it:**
+- No more conflicting task lists
+- One place for everything (no `progress.md`, `todo_v2.md`, `done.md`)
+- Fast O(1) lookups instead of parsing files
 
-List tasks with optional filters.
+---
 
-```bash
-dagRobin list [options]
+## Example Prompts for AI Agents
 
-Options:
-  --status <status>        Filter by status (pending, in_progress, done, blocked)
-  --priority-min <n>       Minimum priority
-  -t, --tags <tags>       Filter by tags
-  -f, --format <format>   Output format: table, json, yaml
-```
+Copy these into your agent prompts to get started:
 
-### ready
-
-List tasks with all dependencies resolved.
-
-```bash
-dagRobin ready [options]
-
-Options:
-  --priority-min <n>       Minimum priority
-  -f, --format <format>   Output format: table, json, yaml
-```
-
-### blocked
-
-List tasks blocked by incomplete dependencies.
-
-```bash
-dagRobin blocked [-f, --format <format>]
-```
-
-### check
-
-Check if a task is ready (exit code 0 if ready, 1 if blocked).
-
-```bash
-dagRobin check <id>
-```
-
-### update
-
-Update task fields.
-
-```bash
-dagRobin update <id> [options]
-
-Options:
-  -s, --status <status>   New status
-  -t, --title <text>      New title
-  --description <text>    New description
-  --metadata <k:v>        Add metadata key-value pair
-```
-
-### delete
-
-Delete a task.
-
-```bash
-dagRobin delete <id> [-f, --force]
-```
-
-### graph
-
-Generate dependency graph visualization.
-
-```bash
-dagRobin graph [options]
-
-Options:
-  -f, --format <format>   Graph format: ascii, dot, mermaid
-  -o, --output <file>    Write to file instead of stdout
-```
-
-### import / export
-
-Import or export tasks in YAML format.
-
-```bash
-dagRobin export <file> [options]
-dagRobin import <file> [options]
-
-Options:
-  --status <status>        Filter by status
-  --tags <tags>           Filter by tags
-  --merge                  Import: merge with existing (default)
-  --replace                Import: replace all existing
-```
-
-## Configuration
-
-Default database location is `dagrobin.db` in the current directory.
-
-```bash
-dagRobin --db /path/to/database add t1 "Task"
-```
-
-## Architecture
+### Basic Agent Prompt
 
 ```
-src/
-  task.rs    - Task struct and TaskStatus enum
-  db.rs      - Sled database with indices
-  main.rs    - CLI commands (clap)
+You have access to dagRobin for task management. Use it to coordinate your work.
+
+Setup:
+1. Run `dagRobin ready` to see what tasks are available
+2. Pick one task and mark it as in_progress
+3. Complete the task
+4. Mark it as done
+5. Run `dagRobin ready` again
+
+Key commands:
+- dagRobin ready --format yaml
+- dagRobin list --status pending
+- dagRobin update <id> --status in_progress
+- dagRobin update <id> --status done
+- dagRobin graph --format mermaid
 ```
 
-## AI Agent Integration Guide
+### Full Claude Code Integration
 
-This section explains how autonomous agents (Claude, OpenAI, etc.) can effectively use dagRobin to coordinate work.
-
-### Task ID Naming Convention
-
-Use clear, descriptive IDs with a consistent format:
-
-```
-[type]-[number]   # Examples: setup-1, api-1, test-2, deploy-3
-feature-[name]    # Examples: feature-auth, feature-payments
-fix-[issue]       # Examples: fix-login, fix-memory-leak
-```
-
-Avoid generic IDs like `t1`, `task1` - they become confusing at scale.
-
-### Recommended Workflow for Agents
-
-#### 1. At Session Start: Check Ready Tasks
-
-```bash
-dagRobin ready --format yaml
-```
-
-This returns all tasks ready to work on (all dependencies resolved).
-
-#### 2. Pick One Task to Work On
-
-When starting a task, mark it as in_progress and record who is working on it:
-
-```bash
-dagRobin update setup-1 --status in_progress --metadata "agent=claude,started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-```
-
-#### 3. After Completing: Mark Done and Add Metadata
-
-```bash
-dagRobin update setup-1 --status done --metadata "completed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ),agent=claude"
-```
-
-#### 4. View Current Progress
-
-```bash
-dagRobin list --format table
-dagRobin graph --format mermaid
-```
-
-### Task Creation Template
-
-When adding tasks, include all relevant information:
-
-```bash
-dagRobin add feature-auth "Implement user authentication" \
-  --priority 1 \
-  --deps setup-db \
-  --tags "backend,security" \
-  --files "src/auth.rs,src/middleware.rs" \
-  --description "Implement JWT-based authentication with refresh tokens"
-```
-
-### YAML Format for Batch Operations
-
-For importing multiple tasks, use this YAML format:
-
-```yaml
-- id: setup-1
-  title: Initialize project structure
-  priority: 1
-  tags: [setup]
-  deps: []
-
-- id: api-users
-  title: Create user API endpoints
-  priority: 2
-  tags: [backend,api]
-  deps: [setup-1]
-  files: [src/api/users.rs]
-  description: CRUD operations for users
-
-- id: api-posts
-  title: Create posts API endpoints
-  priority: 2
-  tags: [backend,api]
-  deps: [setup-1]
-  files: [src/api/posts.rs]
-  description: CRUD operations for posts
-
-- id: tests
-  title: Write integration tests
-  priority: 3
-  tags: [testing]
-  deps: [api-users,api-posts]
-```
-
-Import with:
-
-```bash
-dagRobin import tasks.yaml --replace
-```
-
-### Best Practices for Agent Coordination
-
-1. **Always check ready before starting**: Never assume a task is ready. Always run `dagRobin ready` or `dagRobin check <id>`.
-
-2. **One agent per task**: When an agent starts working on a task, mark it `in_progress` with agent metadata to prevent duplicate work.
-
-3. **Use atomic commits**: Each agent should complete one task fully (status=done) before moving to the next.
-
-4. **Add context to metadata**: Record agent name, time spent, and any notes.
-
-```bash
-# Agent starting work
-dagRobin update task-1 --status in_progress --metadata "agent=claudeaude,started=$(date +%s)"
-
-# Agent completing work
-dagRobin update task-1 --status done --metadata "agent=claudeaude,completed=$(date +%s),notes=Required refactoring of auth module"
-```
-
-5. **Use tags for filtering**: Tags help agents find relevant tasks.
-
-```bash
-# Find backend tasks
-dagRobin list --tags backend --status pending
-
-# Find tasks affecting specific files
-dagRobin list --files src/database.rs
-```
-
-### Claude Code Integration Example
-
-Add this to your CLAUDE.md:
+Add this to your CLAUDE.md file:
 
 ```markdown
 # Project Task Management
 
-This project uses dagRobin for task coordination.
+This project uses dagRobin. You MUST use it for all task coordination.
 
-## Key Commands
-- `dagRobin ready` - List tasks ready to work on
-- `dagRobin list` - View all tasks
-- `dagRobin graph --format mermaid` - Visualize dependencies
+## First Thing You Do
+Every session starts with: dagRobin ready
 
-## Workflow
-1. Run `dagRobin ready` at session start
-2. Pick one task, mark as in_progress with your agent name
-3. Complete the task, mark as done
-4. Repeat
+## Task Lifecycle
+1. dagRobin ready --format yaml
+2. dagRobin update <task-id> --status in_progress --metadata "agent=claudeaude"
+3. Do the work
+4. dagRobin update <task-id> --status done --metadata "agent=claudeaude,completed=$(date +%s)"
 
-## Example Session
-dagRobin update auth-1 --status in_progress --metadata "agent=claudeaude"
-# ... do work ...
-dagRobin update auth-1 --status done --metadata "agent=claudeaude,completed=$(date +%s)"
+## Rules
+- NEVER work on a task without marking it in_progress first
+- ALWAYS check dagRobin ready before starting work
+- NEVER skip the task system and work on random things
+- When blocked, explain which dependencies are blocking you
+
+## Useful Commands
+dagRobin list                           # See all tasks
+dagRobin blocked                        # What's waiting on something
+dagRobin graph --format mermaid        # Visual overview
+dagRobin check <id>                    # Is this task ready? (exit code 0/1)
 ```
 
-### Exit Codes
+### Orchestrator Agent Prompt
 
-| Code | Meaning |
-|------|---------|
-| 0 | Success or task is ready (check command) |
-| 1 | Task is blocked (check command) or error |
-
-Use exit codes to script agent behavior:
+You are the orchestrator. Your job is to:
+1. Load tasks from dagRobin
+2. Assign tasks to worker agents
+3. Monitor progress
+4. Handle dependencies
 
 ```bash
-if dagRobin check $TASK_ID; then
-  echo "Task $TASK_ID is ready to work"
-else
-  echo "Task $TASK_ID is blocked"
-fi
+# Get tasks ready to work on
+dagRobin ready --format yaml
+
+# Check specific task
+dagRobin check <task-id>
+
+# Assign to agent (update metadata)
+dagRobin update <task-id> --status in_progress --metadata "agent=worker-1"
+
+# Mark complete
+dagRobin update <task-id> --status done
+
+# See overall progress
+dagRobin list --format table
+dagRobin graph --format mermaid
 ```
 
-## Testing
+### Worker Agent Prompt
+
+You are a worker agent. Your workflow:
 
 ```bash
-cargo test
+# 1. Ask for work
+dagRobin ready --format yaml
+
+# 2. Claim a task
+dagRobin update <task-id> --status in_progress --metadata "agent=worker-2,started=$(date +%s)"
+
+# 3. Do the work (implement the feature, fix the bug, etc)
+
+# 4. Mark complete
+dagRobin update <task-id> --status done --metadata "agent=worker-2,completed=$(date +%s)"
+
+# 5. Get next task
+dagRobin ready
 ```
 
-## Dependencies
+### Multi-Agent Coordination Example
 
-| Component | Choice | Reason |
-|-----------|--------|--------|
-| Language | Rust | Performance, safety, static binary |
-| Database | Sled | Pure Rust, ACID, embedded |
-| CLI | clap | Derive macros, automatic validation |
-| Serialization | serde | YAML/JSON interoperability |
+```bash
+# Orchestrator: Create tasks with clear ownership
+dagRobin add auth-worker "Implement authentication" --priority 1 --tags "backend,auth"
+dagRobin add api-worker "Build REST API" --deps auth-worker --priority 2 --tags "backend,api"
+dagRobin add test-worker "Write integration tests" --deps api-worker --priority 3 --tags "testing"
+
+# Worker 1: Claims auth task
+dagRobin update auth-worker --status in_progress --metadata "agent=claudeaude"
+# ... does auth work ...
+dagRobin update auth-worker --status done
+
+# Worker 2: Now api-worker is ready, claims it
+dagRobin update api-worker --status in_progress --metadata "agent=worker-2"
+# ... does API work ...
+dagRobin update api-worker --status done
+
+# Worker 3: test-worker now ready
+dagRobin update test-worker --status in_progress --metadata "agent=worker-3"
+```
+
+---
+
+## Configuration
+
+Database location (defaults to `dagrobin.db` in current folder):
+
+```bash
+dagRobin --db ~/.config/dagRobin/mytasks.db list
+```
+
+---
 
 ## License
 
-Licensed under the MIT OR Apache-2.0 license.
+MIT OR Apache-2.0 - use it however you want.
