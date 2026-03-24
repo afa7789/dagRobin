@@ -4,6 +4,23 @@
 
 **Shared task tracking for multiple AI agents.**
 
+> Single source of truth for coordinating multiple AI agents. Export/import as YAML, visualize dependencies, prevent duplicate work.
+> 
+> [Agent Integration](#for-ai-agents) - Add to your CLAUDE.md for multi-agent coordination
+
+---
+
+## TL;DR
+
+```bash
+dagRobin add task-id "Description" --deps dep-id --priority 1
+dagRobin ready                    # What can I work on?
+dagRobin claim task-id --agent me # Claim before starting!
+dagRobin update task-id --status done
+dagRobin export tasks.yaml        # Save to file
+dagRobin import tasks.yaml --merge # Load from file
+```
+
 dagRobin is an external task database that multiple AI agents (Claude, Cowork, OpenRoute, etc.) can query and update simultaneously. No more markdown files, no more "who's working on what?", no more duplicate work.
 
 ---

@@ -9,3 +9,4 @@ Cargo.lock
 .orchestrator_todo
 .DS_Store
 .claude
+.opencode
