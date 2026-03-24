@@ -1,7 +1,34 @@
+//! Database module for dagRobin
+//!
+//! Provides persistent storage for tasks using Sled embedded database.
+//!
+//! # Example
+//!
+//! ```rust,ignore
+//! use dagrobin::db::Database;
+//! use dagrobin::task::Task;
+//!
+//! let db = Database::new("tasks.db").unwrap();
+//! let task = Task::new("t1", "My task");
+//! db.upsert(&task).unwrap();
+//! ```
+
 use crate::task::{Task, TaskStatus};
 use anyhow::Result;
 use sled::Tree;
 
+/// Database for storing and querying tasks.
+///
+/// The database uses Sled embedded storage with multiple index trees
+/// for fast queries by status, priority, tags, and dependencies.
+///
+/// # Creating a Database
+///
+/// ```rust,ignore
+/// use dagrobin::db::Database;
+///
+/// let db = Database::new("my_tasks.db").unwrap();
+/// ```
 pub struct Database {
     data: Tree,
     idx_status: Tree,
@@ -11,6 +38,19 @@ pub struct Database {
 }
 
 impl Database {
+    /// Opens or creates a database at the given path.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to the database file (or directory)
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use dagrobin::db::Database;
+    ///
+    /// let db = Database::new("/tmp/tasks.db").unwrap();
+    /// ```
     pub fn new(path: &str) -> Result<Self> {
         let db = sled::open(path)?;
         Ok(Self {
@@ -22,13 +62,52 @@ impl Database {
         })
     }
 
+    /// Inserts or updates a task.
+    ///
+    /// If a task with the same ID exists, it will be replaced.
+    /// Indices are automatically updated.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use dagrobin::db::Database;
+    /// use dagrobin::task::Task;
+    ///
+    /// let db = Database::new("tasks.db").unwrap();
+    /// let task = Task::new("t1", "My task");
+    /// db.upsert(&task).unwrap();
+    /// ```
     pub fn upsert(&self, task: &Task) -> Result<()> {
+        if let Ok(existing) = self.get(&task.id) {
+            self.remove_indices(&existing)?;
+        }
         let json = serde_json::to_string(task)?;
         self.data.insert(&task.id, json.as_bytes())?;
         self.update_indices(task)?;
         Ok(())
     }
 
+    /// Retrieves a task by ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the task does not exist.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use dagrobin::db::Database;
+    ///
+    /// let db = Database::new("tasks.db").unwrap();
+    ///
+    /// // Success case
+    /// let task = db.get("t1").unwrap();
+    /// println!("Task: {}", task.title);
+    ///
+    /// // Error case - task not found
+    /// let result = db.get("nonexistent");
+    /// assert!(result.is_err());
+    /// ```
     pub fn get(&self, id: &str) -> Result<Task> {
         let data = self
             .data
@@ -38,6 +117,23 @@ impl Database {
         Ok(task)
     }
 
+    /// Deletes a task by ID.
+    ///
+    /// Does not error if task doesn't exist (idempotent).
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use dagrobin::db::Database;
+    ///
+    /// let db = Database::new("tasks.db").unwrap();
+    ///
+    /// // Delete existing task - succeeds
+    /// db.delete("t1").unwrap();
+    ///
+    /// // Delete non-existent task - also succeeds (idempotent)
+    /// db.delete("nonexistent").unwrap();
+    /// ```
     pub fn delete(&self, id: &str) -> Result<()> {
         if let Ok(task) = self.get(id) {
             self.remove_indices(&task)?;
@@ -46,6 +142,19 @@ impl Database {
         Ok(())
     }
 
+    /// Lists all tasks.
+    ///
+    /// Returns an empty vector if no tasks exist.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use dagrobin::db::Database;
+    ///
+    /// let db = Database::new("tasks.db").unwrap();
+    /// let tasks = db.list_all().unwrap();
+    /// println!("Total tasks: {}", tasks.len());
+    /// ```
     pub fn list_all(&self) -> Result<Vec<Task>> {
         let mut tasks = Vec::new();
         for item in self.data.iter() {
@@ -55,6 +164,26 @@ impl Database {
         Ok(tasks)
     }
 
+    /// Lists tasks filtered by status.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if database read fails.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use dagrobin::db::Database;
+    /// use dagrobin::task::TaskStatus;
+    ///
+    /// let db = Database::new("tasks.db").unwrap();
+    ///
+    /// // Get pending tasks
+    /// let pending = db.list_by_status(&TaskStatus::Pending).unwrap();
+    ///
+    /// // Get done tasks
+    /// let done = db.list_by_status(&TaskStatus::Done).unwrap();
+    /// ```
     pub fn list_by_status(&self, status: &TaskStatus) -> Result<Vec<Task>> {
         let status_key = format!("{:?}:", status);
         let mut tasks = Vec::new();
@@ -68,6 +197,40 @@ impl Database {
         Ok(tasks)
     }
 
+    /// Returns tasks that are ready to work on.
+    ///
+    /// A task is "ready" if:
+    /// - Its status is `Pending`
+    /// - All its dependencies have status `Done`
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use dagrobin::db::Database;
+    /// use dagrobin::task::{Task, TaskStatus};
+    ///
+    /// let db = Database::new("tasks.db").unwrap();
+    ///
+    /// // Create a chain: t1 -> t2
+    /// let t1 = Task::new("t1", "Setup");
+    /// db.upsert(&t1).unwrap();
+    ///
+    /// let mut t2 = Task::new("t2", "API");
+    /// t2.deps = vec!["t1".to_string()];
+    /// db.upsert(&t2).unwrap();
+    ///
+    /// // t1 has no deps, so it's ready
+    /// let ready = db.ready_tasks().unwrap();
+    /// assert_eq!(ready.len(), 1);
+    ///
+    /// // After t1 is done, t2 becomes ready
+    /// let mut t1_done = db.get("t1").unwrap();
+    /// t1_done.status = TaskStatus::Done;
+    /// db.upsert(&t1_done).unwrap();
+    ///
+    /// let ready = db.ready_tasks().unwrap();
+    /// assert_eq!(ready[0].id, "t2");
+    /// ```
     pub fn ready_tasks(&self) -> Result<Vec<Task>> {
         let pending = self.list_by_status(&TaskStatus::Pending)?;
         Ok(pending
@@ -82,6 +245,33 @@ impl Database {
             .collect())
     }
 
+    /// Returns tasks that are blocked by incomplete dependencies.
+    ///
+    /// Each entry contains the blocked task and a list of missing dependency IDs.
+    /// Returns an empty vector if no tasks are blocked.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use dagrobin::db::Database;
+    /// use dagrobin::task::Task;
+    ///
+    /// let db = Database::new("tasks.db").unwrap();
+    ///
+    /// // Create blocked task
+    /// let t1 = Task::new("t1", "Setup"); // pending
+    /// db.upsert(&t1).unwrap();
+    ///
+    /// let mut t2 = Task::new("t2", "API");
+    /// t2.deps = vec!["t1".to_string()];
+    /// db.upsert(&t2).unwrap();
+    ///
+    /// // t2 is blocked by t1
+    /// let blocked = db.blocked_tasks().unwrap();
+    /// assert_eq!(blocked.len(), 1);
+    /// assert_eq!(blocked[0].0.id, "t2");
+    /// assert_eq!(blocked[0].1, vec!["t1"]);
+    /// ```
     pub fn blocked_tasks(&self) -> Result<Vec<(Task, Vec<String>)>> {
         let pending = self.list_by_status(&TaskStatus::Pending)?;
         let mut blocked = Vec::new();
