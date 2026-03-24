@@ -1,1 +1,7 @@
 .claude
+.env
+*.out
+*.log
+*.tmp
+*.bak
+*.swp
