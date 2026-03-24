@@ -2,20 +2,43 @@
 
 ![dagRobin](./resources/dagRobin.png)
 
-**The task manager that actually helps you get things done.**
+**Shared task tracking for multiple AI agents.**
 
-Ever feel lost about what to do next? dagRobin keeps track of your tasks and their dependencies, so you always know exactly what can be worked on right now.
+dagRobin is an external task database that multiple AI agents (Claude, Cowork, OpenRoute, etc.) can query and update simultaneously. No more markdown files, no more "who's working on what?", no more duplicate work.
 
 ---
 
 ### The Simple Version
 
-Think of dagRobin like a to-do list on steroids. You can say things like:
-- "First I need to set up the database"
-- "Then I can build the API"
-- "Finally, I can write tests"
+Imagine you have multiple AI agents working on the same project:
+- Claude is fixing the auth module
+- Cowork is building the API
+- OpenRoute is writing tests
 
-dagRobin figures out what you can actually do right now, and what you need to wait for.
+Without dagRobin: Agents step on each other, overwrite progress files, don't know who's doing what.
+
+With dagRobin: All agents query the same database. If an agent starts a task (`in_progress`), other agents can see it's already being worked on and skip it.
+
+dagRobin GIVES YOU THE TOOL to prevent agents from stepping on each other. It's a single source of truth that you can export/import, track progress, and coordinate work across tools.
+
+---
+
+### Important: Mark Tasks Before Starting
+
+**ALWAYS mark a task as `in_progress` BEFORE starting work.**
+
+```bash
+# Check if task is already being worked on
+dagRobin get <task-id>
+
+# If status is "InProgress" with agent metadata, skip it!
+# Only claim if status is "Pending"
+
+# To claim a task:
+dagRobin update <task-id> --status in_progress --metadata "agent=your-name"
+```
+
+If you try to work on a task that's already `in_progress`, another agent is already working on it. Don't duplicate the work!
 
 ---
 
@@ -113,6 +136,29 @@ dagRobin list --tags backend
 dagRobin blocked
 ```
 
+### Claiming Tasks (Recommended)
+
+**Before starting any work, ALWAYS claim the task first!**
+
+```bash
+# Claim a task for your agent
+dagRobin claim <task-id> --agent your-agent-name
+
+# Example:
+dagRobin claim feature-auth --agent claudeaude
+
+# If someone else already claimed it, you'll see:
+# Task 'feature-auth' is already being worked on by 'worker-2'
+# Do NOT start work on this task!
+# Exit code: 1
+```
+
+The `claim` command:
+- Verifies the task isn't already being worked on
+- Marks it as `in_progress`
+- Records who is working on it
+- Prevents other agents from duplicating work
+
 ### Updating Tasks
 
 ```bash
@@ -193,17 +239,18 @@ You have access to dagRobin for task management. Use it to coordinate your work.
 
 Setup:
 1. Run `dagRobin ready` to see what tasks are available
-2. Pick one task and mark it as in_progress
+2. Use `dagRobin claim <task-id> --agent your-name` to claim a task
 3. Complete the task
-4. Mark it as done
+4. Mark it as done with `dagRobin update <task-id> --status done`
 5. Run `dagRobin ready` again
 
 Key commands:
 - dagRobin ready --format yaml
-- dagRobin list --status pending
-- dagRobin update <id> --status in_progress
+- dagRobin claim <id> --agent your-name
 - dagRobin update <id> --status done
 - dagRobin graph --format mermaid
+
+IMPORTANT: If dagRobin claim returns exit code 1, another agent is already working on that task. Pick a different one!
 ```
 
 ### Full Claude Code Integration
@@ -220,13 +267,14 @@ Every session starts with: dagRobin ready
 
 ## Task Lifecycle
 1. dagRobin ready --format yaml
-2. dagRobin update <task-id> --status in_progress --metadata "agent=claudeaude"
+2. dagRobin claim <task-id> --agent claudecode
 3. Do the work
-4. dagRobin update <task-id> --status done --metadata "agent=claudeaude,completed=$(date +%s)"
+4. dagRobin update <task-id> --status done --metadata "agent=claudecode,completed=$(date +%s)"
 
 ## Rules
-- NEVER work on a task without marking it in_progress first
-- ALWAYS check dagRobin ready before starting work
+- ALWAYS use `dagRobin claim` before starting work
+- If claim fails (exit code 1), pick a different task
+- NEVER work on unclaimed tasks
 - NEVER skip the task system and work on random things
 - When blocked, explain which dependencies are blocking you
 

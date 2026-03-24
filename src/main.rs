@@ -56,6 +56,11 @@ enum Commands {
     Check {
         id: String,
     },
+    Claim {
+        id: String,
+        #[arg(long, short)]
+        agent: String,
+    },
     Delete {
         id: String,
         #[arg(long, short)]
@@ -261,6 +266,38 @@ fn main() -> anyhow::Result<()> {
                     .unwrap_or(false)
             });
             std::process::exit(if ready { 0 } else { 1 });
+        }
+
+        Commands::Claim { id, agent } => {
+            let task = db.get(id)?;
+
+            if task.status == TaskStatus::InProgress {
+                let current_agent = task
+                    .metadata
+                    .get("agent")
+                    .map(|s| s.as_str())
+                    .unwrap_or("unknown");
+                eprintln!(
+                    "Task '{}' is already being worked on by '{}'",
+                    id, current_agent
+                );
+                eprintln!("Do NOT start work on this task!");
+                std::process::exit(1);
+            }
+
+            if task.status == TaskStatus::Done {
+                eprintln!("Task '{}' is already DONE", id);
+                std::process::exit(1);
+            }
+
+            let mut updated = task;
+            updated.status = TaskStatus::InProgress;
+            updated.metadata.insert("agent".to_string(), agent.clone());
+            updated
+                .metadata
+                .insert("started_at".to_string(), chrono::Utc::now().to_rfc3339());
+            db.upsert(&updated)?;
+            println!("Claimed task '{}' for agent '{}'", id, agent);
         }
 
         Commands::Delete { id, force } => {

@@ -103,9 +103,6 @@ dagRobin add backend "Build backend" --deps setup --priority 2
 dagRobin add frontend "Build frontend" --deps setup --priority 2
 dagRobin add tests "Integration tests" --deps backend,frontend --priority 3
 
-# Assign to worker
-dagRobin update backend --status in_progress --metadata "agent=worker-1"
-
 # Monitor progress
 dagRobin list --format table
 ```
@@ -118,8 +115,10 @@ Workers pick up ready tasks:
 # 1. Ask for work
 dagRobin ready --format yaml
 
-# 2. Claim task
-dagRobin update <task-id> --status in_progress --metadata "agent=worker-2"
+# 2. Claim task (checks if already being worked on)
+dagRobin claim <task-id> --agent worker-2
+
+# If claim fails (another agent is working), pick another task
 
 # 3. Do work
 # ... implement feature ...
@@ -145,13 +144,14 @@ Repeat Steps 1-6 until:
 ## Useful Commands Reference
 
 ```bash
-dagRobin add <id> <title>          # Add a task
-dagRobin list                        # List all tasks
-dagRobin ready                       # Tasks ready to work on
-dagRobin blocked                      # Blocked tasks
-dagRobin check <id>                  # Is task ready? (exit code 0/1)
-dagRobin update <id> --status done  # Mark as done
-dagRobin graph --format mermaid     # Visual dependency graph
-dagRobin export tasks.yaml           # Export to YAML
+dagRobin add <id> <title>           # Add a task
+dagRobin list                         # List all tasks
+dagRobin ready                        # Tasks ready to work on
+dagRobin blocked                       # Blocked tasks
+dagRobin claim <id> --agent <name>  # Claim task (prevents conflicts)
+dagRobin check <id>                   # Is task ready? (exit code 0/1)
+dagRobin update <id> --status done   # Mark as done
+dagRobin graph --format mermaid      # Visual dependency graph
+dagRobin export tasks.yaml            # Export to YAML
 dagRobin import tasks.yaml --merge   # Import from YAML
 ```
