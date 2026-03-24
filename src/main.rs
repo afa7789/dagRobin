@@ -1,16 +1,20 @@
-mod db;
-mod task;
-
 use clap::{Parser, Subcommand, ValueEnum};
-use db::Database;
+use dagrobin::db::Database;
+use dagrobin::error::{DagRobinError, Result};
+use dagrobin::task::{Task, TaskStatus};
 use std::path::PathBuf;
-use task::{Task, TaskStatus};
+
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Parser, Clone)]
-#[command(name = "task-dag")]
-#[command(about = "DAG-based task manager for autonomous agents", long_about = None)]
+#[command(
+    name = "dagRobin",
+    about = "DAG-based task manager for AI agents",
+    long_about = None,
+    version = VERSION
+)]
 struct Cli {
-    #[arg(short, long, default_value = "taskdag.db")]
+    #[arg(short, long, default_value = "dagrobin.db")]
     db: PathBuf,
 
     #[command(subcommand)]
@@ -32,6 +36,9 @@ enum Commands {
         tags: Vec<String>,
         #[arg(long)]
         files: Vec<String>,
+    },
+    Get {
+        id: String,
     },
     List {
         #[arg(long)]
@@ -118,13 +125,18 @@ struct TaskStatusArg(String);
 
 impl std::str::FromStr for TaskStatusArg {
     type Err = String;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "pending" | "todo" => Ok(TaskStatusArg("pending".to_string())),
-            "in_progress" | "progress" | "doing" => Ok(TaskStatusArg("in_progress".to_string())),
+            "in_progress" | "progress" | "doing" | "inprogress" => {
+                Ok(TaskStatusArg("in_progress".to_string()))
+            }
             "done" | "completed" | "complete" => Ok(TaskStatusArg("done".to_string())),
             "blocked" => Ok(TaskStatusArg("blocked".to_string())),
-            _ => Err(format!("Invalid status: {}", s)),
+            _ => Err(format!(
+                "Invalid status '{}'. Valid options: pending, in_progress, done, blocked",
+                s
+            )),
         }
     }
 }
@@ -162,6 +174,27 @@ fn format_table(tasks: &[Task]) {
     }
 }
 
+fn format_task_detail(task: &Task) {
+    println!("ID:          {}", task.id);
+    println!("Title:       {}", task.title);
+    if let Some(desc) = &task.description {
+        println!("Description: {}", desc);
+    }
+    println!("Status:      {:?}", task.status);
+    println!("Priority:    {}", task.priority);
+    println!("Deps:        {:?}", task.deps);
+    println!("Tags:        {:?}", task.tags);
+    println!("Files:       {:?}", task.files);
+    println!("Created:     {}", task.created_at);
+    println!("Updated:     {}", task.updated_at);
+    if !task.metadata.is_empty() {
+        println!("Metadata:");
+        for (k, v) in &task.metadata {
+            println!("  {}: {}", k, v);
+        }
+    }
+}
+
 fn truncate(s: &str, max: usize) -> String {
     if s.len() > max {
         format!("{}...", &s[..max - 3])
@@ -170,7 +203,13 @@ fn truncate(s: &str, max: usize) -> String {
     }
 }
 
-fn main() -> anyhow::Result<()> {
+fn main() {
+    if let Err(e) = run() {
+        dagrobin::error::exit_with_error(&e);
+    }
+}
+
+fn run() -> Result<()> {
     let cli = Cli::parse();
     let db = Database::new(cli.db.to_str().unwrap())?;
 
@@ -194,6 +233,13 @@ fn main() -> anyhow::Result<()> {
             task.files = files.clone();
             db.upsert(&task)?;
             println!("Created task: {}", id);
+        }
+
+        Commands::Get { id } => {
+            let task = db.get(id).map_err(|_| DagRobinError::TaskNotFound {
+                task_id: id.clone(),
+            })?;
+            format_task_detail(&task);
         }
 
         Commands::List {
@@ -259,7 +305,9 @@ fn main() -> anyhow::Result<()> {
         }
 
         Commands::Check { id } => {
-            let task = db.get(id)?;
+            let task = db.get(id).map_err(|_| DagRobinError::TaskNotFound {
+                task_id: id.clone(),
+            })?;
             let ready = task.deps.iter().all(|dep| {
                 db.get(dep)
                     .map(|d| d.status == TaskStatus::Done)
@@ -269,25 +317,26 @@ fn main() -> anyhow::Result<()> {
         }
 
         Commands::Claim { id, agent } => {
-            let task = db.get(id)?;
+            let task = db.get(id).map_err(|_| DagRobinError::TaskNotFound {
+                task_id: id.clone(),
+            })?;
 
             if task.status == TaskStatus::InProgress {
                 let current_agent = task
                     .metadata
                     .get("agent")
-                    .map(|s| s.as_str())
-                    .unwrap_or("unknown");
-                eprintln!(
-                    "Task '{}' is already being worked on by '{}'",
-                    id, current_agent
-                );
-                eprintln!("Do NOT start work on this task!");
-                std::process::exit(1);
+                    .cloned()
+                    .unwrap_or_else(|| "unknown".to_string());
+                return Err(DagRobinError::TaskAlreadyClaimed {
+                    task_id: id.clone(),
+                    agent: current_agent,
+                });
             }
 
             if task.status == TaskStatus::Done {
-                eprintln!("Task '{}' is already DONE", id);
-                std::process::exit(1);
+                return Err(DagRobinError::TaskAlreadyDone {
+                    task_id: id.clone(),
+                });
             }
 
             let mut updated = task;
@@ -304,12 +353,15 @@ fn main() -> anyhow::Result<()> {
             if !*force {
                 if let Ok(task) = db.get(id) {
                     if !task.deps.is_empty() {
-                        println!("Task {} has dependents. Use --force to delete anyway.", id);
-                        std::process::exit(1);
+                        return Err(DagRobinError::TaskHasDependents {
+                            task_id: id.clone(),
+                        });
                     }
                 }
             }
-            db.delete(id)?;
+            db.delete(id).map_err(|_| DagRobinError::TaskNotFound {
+                task_id: id.clone(),
+            })?;
             println!("Deleted: {}", id);
         }
 
@@ -320,7 +372,9 @@ fn main() -> anyhow::Result<()> {
             description,
             metadata,
         } => {
-            let mut task = db.get(id)?;
+            let mut task = db.get(id).map_err(|_| DagRobinError::TaskNotFound {
+                task_id: id.clone(),
+            })?;
             if let Some(s) = status {
                 task.status = parse_status(&s.0);
             }

@@ -13,8 +13,8 @@
 //! db.upsert(&task).unwrap();
 //! ```
 
+use crate::error::{DagRobinError, Result};
 use crate::task::{Task, TaskStatus};
-use anyhow::Result;
 use sled::Tree;
 
 /// Database for storing and querying tasks.
@@ -112,7 +112,9 @@ impl Database {
         let data = self
             .data
             .get(id)?
-            .ok_or_else(|| anyhow::anyhow!("Task not found: {}", id))?;
+            .ok_or_else(|| DagRobinError::TaskNotFound {
+                task_id: id.to_string(),
+            })?;
         let task: Task = serde_json::from_slice(&data)?;
         Ok(task)
     }
@@ -159,7 +161,8 @@ impl Database {
         let mut tasks = Vec::new();
         for item in self.data.iter() {
             let (_, data) = item?;
-            tasks.push(serde_json::from_slice(&data)?);
+            let task: Task = serde_json::from_slice(&data)?;
+            tasks.push(task);
         }
         Ok(tasks)
     }

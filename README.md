@@ -23,6 +23,21 @@ dagRobin GIVES YOU THE TOOL to prevent agents from stepping on each other. It's 
 
 ---
 
+Pt-Br
+
+```
+Criei um sistema de tickets pra organizar o que os agentes precisam fazer e guardei tudo num banco externo (tipo Redis). O orquestrador fica olhando nesse banco e distribui as tarefas. Quando um agente começa ou termina algo, ele atualiza o registro direto ali.
+
+Isso resolve aquela bagunça de ficar procurando status em arquivo Markdown ou lista de "to-do". O acesso é direto e rápido, o que salva muito tempo.
+
+O melhor de tudo é que centraliza tudo. Antes, cada agente criava seu próprio arquivo pra acompanhar o progresso e virava uma zona. Agora, como o contexto do ticket fica "fora" do modelo, dá pra colocar dois agentes de programas diferentes trabalhando no mesmo projeto.
+
+Se os meus tokens do Claude acabarem no meio do caminho, por exemplo, eu consigo subir um modelo gratuito e ele assume exatamente de onde o outro parou, porque o contexto atualizado está salvo nesse banco externo.
+```
+
+
+---
+
 ### Important: Mark Tasks Before Starting
 
 **ALWAYS mark a task as `in_progress` BEFORE starting work.**
