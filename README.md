@@ -171,6 +171,177 @@ src/
   main.rs    - CLI commands (clap)
 ```
 
+## AI Agent Integration Guide
+
+This section explains how autonomous agents (Claude, OpenAI, etc.) can effectively use dagRobin to coordinate work.
+
+### Task ID Naming Convention
+
+Use clear, descriptive IDs with a consistent format:
+
+```
+[type]-[number]   # Examples: setup-1, api-1, test-2, deploy-3
+feature-[name]    # Examples: feature-auth, feature-payments
+fix-[issue]       # Examples: fix-login, fix-memory-leak
+```
+
+Avoid generic IDs like `t1`, `task1` - they become confusing at scale.
+
+### Recommended Workflow for Agents
+
+#### 1. At Session Start: Check Ready Tasks
+
+```bash
+dagRobin ready --format yaml
+```
+
+This returns all tasks ready to work on (all dependencies resolved).
+
+#### 2. Pick One Task to Work On
+
+When starting a task, mark it as in_progress and record who is working on it:
+
+```bash
+dagRobin update setup-1 --status in_progress --metadata "agent=claude,started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+```
+
+#### 3. After Completing: Mark Done and Add Metadata
+
+```bash
+dagRobin update setup-1 --status done --metadata "completed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ),agent=claude"
+```
+
+#### 4. View Current Progress
+
+```bash
+dagRobin list --format table
+dagRobin graph --format mermaid
+```
+
+### Task Creation Template
+
+When adding tasks, include all relevant information:
+
+```bash
+dagRobin add feature-auth "Implement user authentication" \
+  --priority 1 \
+  --deps setup-db \
+  --tags "backend,security" \
+  --files "src/auth.rs,src/middleware.rs" \
+  --description "Implement JWT-based authentication with refresh tokens"
+```
+
+### YAML Format for Batch Operations
+
+For importing multiple tasks, use this YAML format:
+
+```yaml
+- id: setup-1
+  title: Initialize project structure
+  priority: 1
+  tags: [setup]
+  deps: []
+
+- id: api-users
+  title: Create user API endpoints
+  priority: 2
+  tags: [backend,api]
+  deps: [setup-1]
+  files: [src/api/users.rs]
+  description: CRUD operations for users
+
+- id: api-posts
+  title: Create posts API endpoints
+  priority: 2
+  tags: [backend,api]
+  deps: [setup-1]
+  files: [src/api/posts.rs]
+  description: CRUD operations for posts
+
+- id: tests
+  title: Write integration tests
+  priority: 3
+  tags: [testing]
+  deps: [api-users,api-posts]
+```
+
+Import with:
+
+```bash
+dagRobin import tasks.yaml --replace
+```
+
+### Best Practices for Agent Coordination
+
+1. **Always check ready before starting**: Never assume a task is ready. Always run `dagRobin ready` or `dagRobin check <id>`.
+
+2. **One agent per task**: When an agent starts working on a task, mark it `in_progress` with agent metadata to prevent duplicate work.
+
+3. **Use atomic commits**: Each agent should complete one task fully (status=done) before moving to the next.
+
+4. **Add context to metadata**: Record agent name, time spent, and any notes.
+
+```bash
+# Agent starting work
+dagRobin update task-1 --status in_progress --metadata "agent=claudeaude,started=$(date +%s)"
+
+# Agent completing work
+dagRobin update task-1 --status done --metadata "agent=claudeaude,completed=$(date +%s),notes=Required refactoring of auth module"
+```
+
+5. **Use tags for filtering**: Tags help agents find relevant tasks.
+
+```bash
+# Find backend tasks
+dagRobin list --tags backend --status pending
+
+# Find tasks affecting specific files
+dagRobin list --files src/database.rs
+```
+
+### Claude Code Integration Example
+
+Add this to your CLAUDE.md:
+
+```markdown
+# Project Task Management
+
+This project uses dagRobin for task coordination.
+
+## Key Commands
+- `dagRobin ready` - List tasks ready to work on
+- `dagRobin list` - View all tasks
+- `dagRobin graph --format mermaid` - Visualize dependencies
+
+## Workflow
+1. Run `dagRobin ready` at session start
+2. Pick one task, mark as in_progress with your agent name
+3. Complete the task, mark as done
+4. Repeat
+
+## Example Session
+dagRobin update auth-1 --status in_progress --metadata "agent=claudeaude"
+# ... do work ...
+dagRobin update auth-1 --status done --metadata "agent=claudeaude,completed=$(date +%s)"
+```
+
+### Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success or task is ready (check command) |
+| 1 | Task is blocked (check command) or error |
+
+Use exit codes to script agent behavior:
+
+```bash
+if dagRobin check $TASK_ID; then
+  echo "Task $TASK_ID is ready to work"
+else
+  echo "Task $TASK_ID is blocked"
+fi
+```
+
 ## Testing
 
 ```bash
