@@ -1,145 +1,189 @@
-# TaskDAG
+# dagRobin
 
 DAG-based task manager for autonomous agents.
 
+[![Crates.io](https://img.shields.io/crates/v/dagrobin)](https://crates.io/crates/dag-robin)
+[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](./LICENSE)
+
+## Overview
+
+dagRobin is a CLI tool for managing tasks with native DAG (Directed Acyclic Graph) support. It serves as a single source of truth for autonomous agents and human teams, enabling fast queries, batch updates, and dependency visualization.
+
 ## Features
 
-- **DAG-based dependencies**: Tasks can depend on other tasks
-- **Ready task detection**: Automatically find tasks ready to execute
-- **Multiple output formats**: Table, JSON, YAML
-- **Graph visualization**: ASCII, DOT, Mermaid
-- **Fast queries**: <5ms using Sled embedded database
+- DAG-based dependencies between tasks
+- Automatic detection of tasks ready for execution
+- Multiple output formats: Table, JSON, YAML
+- Graph visualization: ASCII, DOT, Mermaid
+- Fast queries using embedded Sled database
+- Atomic operations for data consistency
 
-## Install
+## Installation
 
 ```bash
 cargo build --release
 cargo install --path .
 ```
 
-## Usage
-
-### Add Tasks
+## Quick Start
 
 ```bash
-# Simple task
-./target/release/taskdag add t1 "Setup database" --priority 1
+# Add tasks
+dagRobin add t1 "Setup database" --priority 1
+dagRobin add t2 "API implementation" --deps t1 --priority 2
 
-# Task with dependencies
-./target/release/taskdag add t2 "API implementation" --deps t1 --priority 2
+# List and query
+dagRobin list
+dagRobin ready --format yaml
+dagRobin blocked
 
-# Task with tags and files
-./target/release/taskdag add t3 "Tests" --tags "testing" --files "src/api.rs" --priority 3
+# Update status
+dagRobin update t1 --status done
+
+# Visualize
+dagRobin graph --format mermaid
 ```
 
-### List Tasks
+## Commands
+
+### add
+
+Create a new task.
 
 ```bash
-# List all tasks in table format
-./target/release/taskdag list
+dagRobin add <id> <title> [options]
 
-# List only pending tasks
-./target/release/taskdag list --status pending
-
-# List as JSON
-./target/release/taskdag list --format json
-
-# List as YAML
-./target/release/taskdag list --format yaml
-
-# Filter by priority
-./target/release/taskdag list --priority-min 2
+Options:
+  -p, --priority <n>      Priority (1-10, lower is higher)
+  -d, --deps <ids>        Dependency task IDs
+  -t, --tags <tags>       Comma-separated tags
+  --files <paths>          Affected file paths
+  --description <text>     Task description
 ```
 
-### Ready Tasks (tasks with all dependencies done)
+### list
+
+List tasks with optional filters.
 
 ```bash
-./target/release/taskdag ready
-./target/release/taskdag ready --format yaml
-./target/release/taskdag ready --priority-min 1
+dagRobin list [options]
+
+Options:
+  --status <status>        Filter by status (pending, in_progress, done, blocked)
+  --priority-min <n>       Minimum priority
+  -t, --tags <tags>       Filter by tags
+  -f, --format <format>   Output format: table, json, yaml
 ```
 
-### Blocked Tasks
+### ready
+
+List tasks with all dependencies resolved.
 
 ```bash
-./target/release/taskdag blocked
-./target/release/taskdag blocked --format json
+dagRobin ready [options]
+
+Options:
+  --priority-min <n>       Minimum priority
+  -f, --format <format>   Output format: table, json, yaml
 ```
 
-### Check Task Readiness
+### blocked
+
+List tasks blocked by incomplete dependencies.
 
 ```bash
-./target/release/taskdag check t2 && echo "Ready to work!" || echo "Still blocked"
+dagRobin blocked [-f, --format <format>]
 ```
 
-### Update Tasks
+### check
+
+Check if a task is ready (exit code 0 if ready, 1 if blocked).
 
 ```bash
-# Mark as done
-./target/release/taskdag update t1 --status done
-
-# Update title
-./target/release/taskdag update t1 --title "Database Setup Complete"
-
-# Add metadata
-./target/release/taskdag update t1 --metadata "completed_by=agent"
+dagRobin check <id>
 ```
 
-### Delete Tasks
+### update
+
+Update task fields.
 
 ```bash
-./target/release/taskdag delete t1
-./target/release/taskdag delete t1 --force  # Force delete even with dependents
+dagRobin update <id> [options]
+
+Options:
+  -s, --status <status>   New status
+  -t, --title <text>      New title
+  --description <text>    New description
+  --metadata <k:v>        Add metadata key-value pair
 ```
 
-### Visualize DAG
+### delete
+
+Delete a task.
 
 ```bash
-# ASCII format
-./target/release/taskdag graph
-
-# Mermaid format (for Markdown)
-./target/release/taskdag graph --format mermaid
-
-# DOT format (for Graphviz)
-./target/release/taskdag graph --format dot > dag.dot
-
-# Export to file
-./target/release/taskdag graph --format mermaid --output dag.md
+dagRobin delete <id> [-f, --force]
 ```
 
-### Import/Export
+### graph
+
+Generate dependency graph visualization.
 
 ```bash
-# Export all tasks
-./target/release/taskdag export tasks.yaml
+dagRobin graph [options]
 
-# Export only pending tasks
-./target/release/taskdag export pending.yaml --status pending
+Options:
+  -f, --format <format>   Graph format: ascii, dot, mermaid
+  -o, --output <file>    Write to file instead of stdout
+```
 
-# Import (merge mode - keeps existing)
-./target/release/taskdag import backup.yaml --merge
+### import / export
 
-# Import (replace mode - clears existing)
-./target/release/taskdag import backup.yaml --replace
+Import or export tasks in YAML format.
+
+```bash
+dagRobin export <file> [options]
+dagRobin import <file> [options]
+
+Options:
+  --status <status>        Filter by status
+  --tags <tags>           Filter by tags
+  --merge                  Import: merge with existing (default)
+  --replace                Import: replace all existing
+```
+
+## Configuration
+
+Default database location is `dagrobin.db` in the current directory.
+
+```bash
+dagRobin --db /path/to/database add t1 "Task"
 ```
 
 ## Architecture
 
-- `src/task.rs`: Task struct and status enum
-- `src/db.rs`: Sled database with indices
-- `src/main.rs`: CLI with clap
+```
+src/
+  task.rs    - Task struct and TaskStatus enum
+  db.rs      - Sled database with indices
+  main.rs    - CLI commands (clap)
+```
 
-## Running Tests
+## Testing
 
 ```bash
 cargo test
 ```
 
-## Database Location
+## Dependencies
 
-Default database is `taskdag.db` in current directory. Override with:
+| Component | Choice | Reason |
+|-----------|--------|--------|
+| Language | Rust | Performance, safety, static binary |
+| Database | Sled | Pure Rust, ACID, embedded |
+| CLI | clap | Derive macros, automatic validation |
+| Serialization | serde | YAML/JSON interoperability |
 
-```bash
-./target/release/taskdag --db /path/to/db add t1 "Task"
-```
+## License
+
+Licensed under the MIT OR Apache-2.0 license.

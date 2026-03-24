@@ -1,4 +1,4 @@
-use taskdag::{
+use dagrobin::{
     db::Database,
     task::{Task, TaskStatus},
 };

@@ -1,6 +1,6 @@
 target/
-taskdag.db
 *.db
+dagrobin.db
 Cargo.lock
 *.log
 *.tmp
