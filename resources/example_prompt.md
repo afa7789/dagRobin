@@ -1,6 +1,18 @@
 # dagRobin — Task Management Workflow
 
-Use this workflow to coordinate task management with dagRobin, track progress, and coordinate multiple agents.
+dagRobin is an external task database that gives you the TOOL to prevent multiple AI agents from stepping on each other. It provides a single source of truth for tracking progress, coordinating work, and maintaining task history across different tools and agents.
+
+---
+
+## What dagRobin Does
+
+dagRobin is NOT automatic coordination. It's a SHARED DATABASE that YOU USE to:
+
+- Track which tasks exist and their status
+- Prevent two agents from working on the same task
+- Maintain a single source of truth (no more scattered markdown files)
+- Export/import tasks for backup and sharing
+- Query who is working on what
 
 ---
 
@@ -25,106 +37,236 @@ Use this workflow to coordinate task management with dagRobin, track progress, a
 
 ---
 
-## Step 1 — Check What Can Be Done
+## Step 1 — Set Up Task Database
 
-Run dagRobin to see ready tasks (tasks with all dependencies completed):
+Initialize your project with dagRobin:
+
+```bash
+# Create first task
+dagRobin add setup "Initial project setup" --priority 1
+```
+
+Or import existing tasks:
+
+```bash
+dagRobin import tasks.yaml --merge
+dagRobin export backup.yaml
+```
+
+---
+
+## Step 2 — Add Tasks with Dependencies
+
+Create tasks that form a dependency graph:
+
+```bash
+# Foundation tasks (no dependencies)
+dagRobin add setup-db "Setup database" --priority 1
+dagRobin add setup-config "Setup configuration" --priority 1
+
+# Tasks that depend on foundation
+dagRobin add build-api "Build REST API" --deps setup-db,setup-config --priority 2
+dagRobin add build-frontend "Build frontend" --deps setup-config --priority 2
+
+# Final tasks (depend on intermediate tasks)
+dagRobin add tests "Integration tests" --deps build-api,build-frontend --priority 3
+```
+
+For batch import, use YAML:
+
+```yaml
+- id: setup-1
+  title: Initialize project structure
+  priority: 1
+  deps: []
+
+- id: feature-auth
+  title: Implement authentication
+  priority: 2
+  deps: [setup-1]
+  tags: [backend,security]
+  files: [src/auth.rs,src/middleware.rs]
+
+- id: feature-api
+  title: Build REST API
+  priority: 2
+  deps: [setup-1]
+  tags: [backend,api]
+  files: [src/api/users.rs]
+```
+
+Import with:
+```bash
+dagRobin import tasks.yaml --replace
+```
+
+---
+
+## Step 3 — Check What Can Be Done
+
+Before starting ANY work, check what tasks are ready:
 
 ```bash
 dagRobin ready --format yaml
 ```
 
-This returns all tasks you can work on right now.
+This returns all tasks where:
+- Status is `Pending`
+- All dependencies have status `Done`
 
 ---
 
-## Step 2 — Claim a Task
+## Step 4 — Claim a Task (CRITICAL)
 
-Before starting work, mark the task as `in_progress`:
+**ALWAYS use `claim` before starting work.**
 
 ```bash
-dagRobin update <task-id> --status in_progress --metadata "agent=your-name,started=$(date +%s)"
+dagRobin claim <task-id> --agent your-agent-name
 ```
 
-This prevents other agents from working on the same task.
+Example:
+```bash
+dagRobin claim feature-auth --agent claudeaude
+```
+
+### What happens:
+
+**If task is available (Pending):**
+```
+Claimed task 'feature-auth' for agent 'claudeaude'
+```
+
+**If someone else is working on it (InProgress):**
+```
+Task 'feature-auth' is already being worked on by 'worker-2'
+Do NOT start work on this task!
+Exit code: 1
+```
+
+**If task is already Done:**
+```
+Task 'feature-auth' is already DONE
+Exit code: 1
+```
+
+### Why this matters:
+
+- Prevents two agents from duplicating work
+- Shows who's working on what
+- Gives you proof that you checked before starting
+
+### The Rule:
+
+**If `claim` returns exit code 1, pick a different task. Do NOT work on it!**
 
 ---
 
-## Step 3 — Do the Work
+## Step 5 — Do the Work
 
-Complete the task. Read files, write code, run tests — whatever the task requires.
+Complete the task. This may include:
+- Reading/writing code
+- Running tests
+- Creating files
+- Updating documentation
 
 ---
 
-## Step 4 — Mark as Done
+## Step 6 — Mark as Done
 
 When finished:
 
 ```bash
-dagRobin update <task-id> --status done --metadata "agent=your-name,completed=$(date +%s)"
+dagRobin update <task-id> --status done --metadata "agent=your-agent-name,completed=$(date +%s)"
 ```
 
 ---
 
-## Step 5 — Check Progress
+## Step 7 — Check Progress
+
+### Monitor overall status:
 
 ```bash
-# See all tasks
+# List all tasks
 dagRobin list --format table
 
-# See blocked tasks (waiting on something)
-dagRobin blocked
+# Only pending tasks
+dagRobin list --status pending
 
-# Visual overview
+# Only done tasks
+dagRobin list --status done
+
+# Only in-progress tasks (see who's working)
+dagRobin list --status in_progress
+```
+
+### Check blocked tasks:
+
+```bash
+dagRobin blocked --format yaml
+```
+
+### Visualize dependencies:
+
+```bash
+# ASCII graph
+dagRobin graph
+
+# Mermaid (for Markdown)
 dagRobin graph --format mermaid
+
+# DOT (for Graphviz)
+dagRobin graph --format dot --output dag.dot
 ```
 
 ---
 
-## Step 6 — Get Next Task
+## Step 8 — Repeat
 
 ```bash
 dagRobin ready --format yaml
 ```
 
-Repeat from Step 2.
+Repeat from Step 4 until no tasks are ready.
 
 ---
 
-## Workflow for Multiple Agents
+## Multi-Agent Coordination Pattern
 
 ### Orchestrator Agent
 
-The orchestrator creates tasks and assigns them:
+The orchestrator creates tasks and monitors progress:
 
 ```bash
-# Create tasks with clear dependencies
-dagRobin add setup "Initial setup" --priority 1
-dagRobin add backend "Build backend" --deps setup --priority 2
-dagRobin add frontend "Build frontend" --deps setup --priority 2
-dagRobin add tests "Integration tests" --deps backend,frontend --priority 3
+# Create tasks with dependencies
+dagRobin add orch-1 "Setup"
+dagRobin add orch-2 "Build backend" --deps orch-1
+dagRobin add orch-3 "Build frontend" --deps orch-1
+dagRobin add orch-4 "Tests" --deps orch-2,orch-3
 
 # Monitor progress
 dagRobin list --format table
+dagRobin graph --format mermaid
 ```
 
-### Worker Agent
+### Worker Agents
 
-Workers pick up ready tasks:
+Each worker follows this cycle:
 
 ```bash
-# 1. Ask for work
+# 1. Check what can be worked on
 dagRobin ready --format yaml
 
-# 2. Claim task (checks if already being worked on)
-dagRobin claim <task-id> --agent worker-2
+# 2. Try to claim a task
+dagRobin claim <task-id> --agent worker-1
 
-# If claim fails (another agent is working), pick another task
+# If claim fails (exit code 1), pick another task
+# REPEAT until claim succeeds
 
-# 3. Do work
+# 3. Do the work
 # ... implement feature ...
 
-# 4. Mark done
-dagRobin update <task-id> --status done --metadata "agent=worker-2,completed=$(date +%s)"
+# 4. Mark as done
+dagRobin update <task-id> --status done --metadata "agent=worker-1,completed=$(date +%s)"
 
 # 5. Get next task
 dagRobin ready
@@ -132,26 +274,89 @@ dagRobin ready
 
 ---
 
-## Loop — Continue Until Done
+## Conflict Prevention
 
-Repeat Steps 1-6 until:
+The `claim` command is your tool to prevent conflicts:
 
-1. `dagRobin ready` returns no tasks
-2. All tasks have status `done`
+```bash
+# Always check before starting
+dagRobin claim task-id --agent my-agent
+
+# If this fails, someone else is working on it
+# Pick a different task instead
+```
+
+---
+
+## Export and Import
+
+dagRobin stores everything in a single database file. You can export and import:
+
+```bash
+# Export all tasks
+dagRobin export tasks.yaml
+
+# Export only pending tasks
+dagRobin export pending.yaml --status pending
+
+# Import (merge with existing)
+dagRobin import tasks.yaml --merge
+
+# Import (replace everything)
+dagRobin import fresh.yaml --replace
+```
+
+This makes it easy to:
+- Share task lists
+- Backup progress
+- Onboard new agents
 
 ---
 
 ## Useful Commands Reference
 
 ```bash
-dagRobin add <id> <title>           # Add a task
-dagRobin list                         # List all tasks
-dagRobin ready                        # Tasks ready to work on
-dagRobin blocked                       # Blocked tasks
-dagRobin claim <id> --agent <name>  # Claim task (prevents conflicts)
-dagRobin check <id>                   # Is task ready? (exit code 0/1)
-dagRobin update <id> --status done   # Mark as done
-dagRobin graph --format mermaid      # Visual dependency graph
-dagRobin export tasks.yaml            # Export to YAML
-dagRobin import tasks.yaml --merge   # Import from YAML
+dagRobin add <id> <title>              # Add task
+dagRobin list                              # List all
+dagRobin list --status pending           # Filter by status
+dagRobin list --status in_progress      # Who's working
+dagRobin ready                           # Ready tasks
+dagRobin blocked                         # Blocked tasks
+dagRobin claim <id> --agent <name>    # Claim (prevents conflicts!)
+dagRobin check <id>                     # Is ready? (exit 0/1)
+dagRobin update <id> --status done     # Mark done
+dagRobin update <id> --status in_progress --metadata "agent=name"
+dagRobin delete <id>                   # Remove task
+dagRobin graph --format mermaid        # Visualize
+dagRobin export tasks.yaml              # Save to YAML
+dagRobin import tasks.yaml --merge      # Load from YAML
+dagRobin --db /path/to/db <command>  # Custom database
 ```
+
+---
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success, or task is ready (check command) |
+| 1 | Task blocked/already claimed/already done, or error |
+
+Use in scripts:
+```bash
+if dagRobin claim task-id --agent my-agent; then
+  echo "Claimed task-id, starting work..."
+else
+  echo "Task is already being worked on, picking another..."
+fi
+```
+
+---
+
+## The Golden Rule
+
+**ALWAYS use `dagRobin claim` before starting work.**
+
+If the claim fails (exit code 1), another agent is working on that task. Pick a different one.
+
+This is the tool that PREVENTS conflicts. Use it!
