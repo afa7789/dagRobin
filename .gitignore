@@ -1,9 +1,11 @@
-.claude
-.env
-*.out
+target/
+taskdag.db
+*.db
+Cargo.lock
 *.log
 *.tmp
-*.bak
 *.swp
-orchestrator.sh
+*.bak
+.orchestrator_todo
 .DS_Store
+.claude
