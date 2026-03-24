@@ -5,6 +5,8 @@ DAG-based task manager for autonomous agents.
 [![Crates.io](https://img.shields.io/crates/v/dagrobin)](https://crates.io/crates/dag-robin)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](./LICENSE)
 
+![dagRobin](./resources/dagRobin.png)
+
 ## Overview
 
 dagRobin is a CLI tool for managing tasks with native DAG (Directed Acyclic Graph) support. It serves as a single source of truth for autonomous agents and human teams, enabling fast queries, batch updates, and dependency visualization.
