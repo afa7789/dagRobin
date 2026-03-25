@@ -10,7 +10,7 @@ build-dev:
 
 # Run tests
 test:
-	cargo test
+	cargo test -q -- --test-threads=1
 
 # Run tests with coverage
 test-cov:
@@ -22,7 +22,7 @@ test-all:
 
 # Run linter
 lint:
-	cargo clippy -- -D warnings
+	cargo clippy -q -- -D warnings
 
 # Format code
 fmt:

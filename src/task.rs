@@ -19,7 +19,7 @@ use std::collections::HashMap;
 /// let status = TaskStatus::Pending;
 /// assert_eq!(status, TaskStatus::Pending);
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum TaskStatus {
     #[default]
     Pending,
@@ -62,20 +62,28 @@ pub struct Task {
     /// Optional detailed description
     pub description: Option<String>,
     /// Current status
+    #[serde(default)]
     pub status: TaskStatus,
     /// Priority (lower number = higher priority)
+    #[serde(default)]
     pub priority: u32,
     /// List of task IDs this task depends on
+    #[serde(default)]
     pub deps: Vec<String>,
     /// List of file paths this task affects
+    #[serde(default)]
     pub files: Vec<String>,
     /// Tags for categorization
+    #[serde(default)]
     pub tags: Vec<String>,
     /// Additional key-value metadata
+    #[serde(default)]
     pub metadata: HashMap<String, String>,
     /// When the task was created
+    #[serde(default = "Utc::now")]
     pub created_at: DateTime<Utc>,
     /// When the task was last updated
+    #[serde(default = "Utc::now")]
     pub updated_at: DateTime<Utc>,
 }
 

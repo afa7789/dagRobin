@@ -1,0 +1,41 @@
+DAGROBIN - Task Manager for AI Agents
+
+ADD
+  dagRobin add <id> <title>           Create task
+  dagRobin add <id> <title> --priority 1    Higher priority
+  dagRobin add <id> <title> --deps dep1,dep2  With dependencies
+
+CLAIM (always do this before working!)
+  dagRobin claim <id> --agent <name>  Claim task for agent
+
+LIST & VIEW
+  dagRobin list                        List all tasks
+  dagRobin list --status pending       Filter by status
+  dagRobin ready                      Show ready tasks (deps done)
+  dagRobin blocked                    Show blocked tasks
+  dagRobin get <id>                   Show task details
+  dagRobin check <id>                 Check if deps are done (exit 0/1)
+
+UPDATE
+  dagRobin update <id> --status done  Mark done
+  dagRobin update <id> --title "New"   Change title
+  dagRobin update <id> <key>:<value>   Add metadata
+
+DELETE
+  dagRobin delete <id>                Delete (must have no dependents)
+  dagRobin delete <id> --force        Force delete
+
+GRAPH & EXPORT
+  dagRobin graph                      ASCII graph
+  dagRobin graph --format mermaid     Mermaid diagram
+  dagRobin export file.yaml           Export all to YAML
+  dagRobin import file.yaml           Import from YAML
+
+STATUS VALUES: pending, in_progress, done, blocked
+
+EXAMPLE WORKFLOW:
+  dagRobin add feature-auth "Add auth" --deps setup-db
+  dagRobin ready                      # find available tasks
+  dagRobin claim feature-auth --agent claudeaude
+  # do work...
+  dagRobin update feature-auth --status done

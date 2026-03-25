@@ -238,13 +238,7 @@ impl Database {
         let pending = self.list_by_status(&TaskStatus::Pending)?;
         Ok(pending
             .into_iter()
-            .filter(|t| {
-                t.deps.iter().all(|dep| {
-                    self.get(dep)
-                        .map(|d| d.status == TaskStatus::Done)
-                        .unwrap_or(false)
-                })
-            })
+            .filter(|t| self.is_ready(t))
             .collect())
     }
 
@@ -283,9 +277,10 @@ impl Database {
                 .deps
                 .iter()
                 .filter(|dep| {
-                    self.get(dep)
-                        .map(|d| d.status != TaskStatus::Done)
-                        .unwrap_or(true)
+                    !self
+                        .get(dep)
+                        .map(|d| d.status == TaskStatus::Done)
+                        .unwrap_or(false)
                 })
                 .cloned()
                 .collect();
@@ -294,6 +289,27 @@ impl Database {
             }
         }
         Ok(blocked)
+    }
+
+    /// Checks if a task's dependencies are all done.
+    pub fn is_ready(&self, task: &Task) -> bool {
+        task.deps.iter().all(|dep| {
+            self.get(dep)
+                .map(|d| d.status == TaskStatus::Done)
+                .unwrap_or(false)
+        })
+    }
+
+    /// Returns IDs of tasks that depend on the given task.
+    pub fn get_dependents(&self, id: &str) -> Result<Vec<String>> {
+        let prefix = format!("{}:", id);
+        let mut dependents = Vec::new();
+        for item in self.idx_deps_rev.scan_prefix(&prefix) {
+            let (key, _) = item?;
+            let dependent_id = String::from_utf8_lossy(&key[prefix.len()..]).to_string();
+            dependents.push(dependent_id);
+        }
+        Ok(dependents)
     }
 
     fn update_indices(&self, task: &Task) -> Result<()> {

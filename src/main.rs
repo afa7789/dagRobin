@@ -30,7 +30,7 @@ enum Commands {
         description: Option<String>,
         #[arg(long, short = 'p')]
         priority: Option<u32>,
-        #[arg(long, short = 'd')]
+        #[arg(long)]
         deps: Vec<String>,
         #[arg(long, short = 't')]
         tags: Vec<String>,
@@ -93,8 +93,6 @@ enum Commands {
     Import {
         file: String,
         #[arg(long)]
-        merge: bool,
-        #[arg(long)]
         replace: bool,
     },
     Export {
@@ -121,18 +119,18 @@ enum GraphFormat {
 }
 
 #[derive(Clone)]
-struct TaskStatusArg(String);
+struct TaskStatusArg(TaskStatus);
 
 impl std::str::FromStr for TaskStatusArg {
     type Err = String;
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "pending" | "todo" => Ok(TaskStatusArg("pending".to_string())),
+            "pending" | "todo" => Ok(TaskStatusArg(TaskStatus::Pending)),
             "in_progress" | "progress" | "doing" | "inprogress" => {
-                Ok(TaskStatusArg("in_progress".to_string()))
+                Ok(TaskStatusArg(TaskStatus::InProgress))
             }
-            "done" | "completed" | "complete" => Ok(TaskStatusArg("done".to_string())),
-            "blocked" => Ok(TaskStatusArg("blocked".to_string())),
+            "done" | "completed" | "complete" => Ok(TaskStatusArg(TaskStatus::Done)),
+            "blocked" => Ok(TaskStatusArg(TaskStatus::Blocked)),
             _ => Err(format!(
                 "Invalid status '{}'. Valid options: pending, in_progress, done, blocked",
                 s
@@ -141,34 +139,39 @@ impl std::str::FromStr for TaskStatusArg {
     }
 }
 
-fn parse_status(s: &str) -> TaskStatus {
-    match s {
-        "pending" => TaskStatus::Pending,
-        "in_progress" => TaskStatus::InProgress,
-        "done" => TaskStatus::Done,
-        "blocked" => TaskStatus::Blocked,
-        _ => TaskStatus::Pending,
+fn print_tasks(tasks: &[Task], format: &OutputFormat) -> Result<()> {
+    match format {
+        OutputFormat::Json => println!("{}", serde_json::to_string_pretty(tasks)?),
+        OutputFormat::Yaml => println!("{}", serde_yml::to_string(tasks)?),
+        OutputFormat::Table => format_table(tasks),
     }
+    Ok(())
 }
 
 fn format_table(tasks: &[Task]) {
     println!(
-        "{:<12} {:<30} {:<10} {:<15} {:?}",
-        "ID", "TITLE", "PRIORITY", "STATUS", "DEPS"
+        "{:<12} {:<30} {:<10} {:<15} {:<15} {:?}",
+        "ID", "TITLE", "PRIORITY", "STATUS", "AGENT", "DEPS"
     );
-    println!("{}", "-".repeat(80));
+    println!("{}", "-".repeat(95));
     for t in tasks {
         let deps = if t.deps.is_empty() {
             "-".to_string()
         } else {
             t.deps.join(", ")
         };
+        let agent = t
+            .metadata
+            .get("agent")
+            .cloned()
+            .unwrap_or_else(|| "-".to_string());
         println!(
-            "{:<12} {:<30} {:<10} {:<15} {}",
+            "{:<12} {:<30} {:<10} {:<15} {:<15} {}",
             t.id,
             truncate(&t.title, 28),
             t.priority,
             format!("{:?}", t.status),
+            truncate(&agent, 13),
             deps
         );
     }
@@ -196,8 +199,9 @@ fn format_task_detail(task: &Task) {
 }
 
 fn truncate(s: &str, max: usize) -> String {
-    if s.len() > max {
-        format!("{}...", &s[..max - 3])
+    if s.chars().count() > max {
+        let truncated: String = s.chars().take(max - 3).collect();
+        format!("{}...", truncated)
     } else {
         s.to_string()
     }
@@ -211,7 +215,10 @@ fn main() {
 
 fn run() -> Result<()> {
     let cli = Cli::parse();
-    let db = Database::new(cli.db.to_str().unwrap())?;
+    let db_path = cli.db.to_str().ok_or_else(|| DagRobinError::InvalidInput {
+        message: "Database path contains invalid UTF-8".to_string(),
+    })?;
+    let db = Database::new(db_path)?;
 
     match &cli.command {
         Commands::Add {
@@ -245,23 +252,22 @@ fn run() -> Result<()> {
         Commands::List {
             status,
             priority_min,
-            tags: _,
+            tags,
             format,
         } => {
             let mut tasks = match status {
-                Some(s) => db.list_by_status(&parse_status(&s.0))?,
+                Some(s) => db.list_by_status(&s.0)?,
                 None => db.list_all()?,
             };
 
             if let Some(min) = priority_min {
                 tasks.retain(|t| t.priority <= *min);
             }
-
-            match format {
-                OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&tasks)?),
-                OutputFormat::Yaml => println!("{}", serde_yaml::to_string(&tasks)?),
-                OutputFormat::Table => format_table(&tasks),
+            if !tags.is_empty() {
+                tasks.retain(|t| tags.iter().any(|tag| t.tags.contains(tag)));
             }
+
+            print_tasks(&tasks, format)?;
         }
 
         Commands::Ready {
@@ -272,11 +278,7 @@ fn run() -> Result<()> {
             if let Some(min) = priority_min {
                 tasks.retain(|t| t.priority <= *min);
             }
-            match format {
-                OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&tasks)?),
-                OutputFormat::Yaml => println!("{}", serde_yaml::to_string(&tasks)?),
-                OutputFormat::Table => format_table(&tasks),
-            }
+            print_tasks(&tasks, format)?;
         }
 
         Commands::Blocked { format } => {
@@ -308,12 +310,7 @@ fn run() -> Result<()> {
             let task = db.get(id).map_err(|_| DagRobinError::TaskNotFound {
                 task_id: id.clone(),
             })?;
-            let ready = task.deps.iter().all(|dep| {
-                db.get(dep)
-                    .map(|d| d.status == TaskStatus::Done)
-                    .unwrap_or(false)
-            });
-            std::process::exit(if ready { 0 } else { 1 });
+            std::process::exit(if db.is_ready(&task) { 0 } else { 1 });
         }
 
         Commands::Claim { id, agent } => {
@@ -351,12 +348,11 @@ fn run() -> Result<()> {
 
         Commands::Delete { id, force } => {
             if !*force {
-                if let Ok(task) = db.get(id) {
-                    if !task.deps.is_empty() {
-                        return Err(DagRobinError::TaskHasDependents {
-                            task_id: id.clone(),
-                        });
-                    }
+                let dependents = db.get_dependents(id)?;
+                if !dependents.is_empty() {
+                    return Err(DagRobinError::TaskHasDependents {
+                        task_id: id.clone(),
+                    });
                 }
             }
             db.delete(id).map_err(|_| DagRobinError::TaskNotFound {
@@ -376,7 +372,7 @@ fn run() -> Result<()> {
                 task_id: id.clone(),
             })?;
             if let Some(s) = status {
-                task.status = parse_status(&s.0);
+                task.status = s.0;
             }
             if let Some(t) = title {
                 task.title = t.clone();
@@ -407,35 +403,41 @@ fn run() -> Result<()> {
             }
         }
 
-        Commands::Import {
-            file,
-            merge: _,
-            replace,
-        } => {
+        Commands::Import { file, replace } => {
             if *replace {
                 for task in db.list_all()? {
                     let _ = db.delete(&task.id);
                 }
             }
             let content = std::fs::read_to_string(file)?;
-            if let Ok(tasks) = serde_yaml::from_str::<Vec<Task>>(&content) {
-                for task in tasks {
-                    db.upsert(&task)?;
+            match serde_yml::from_str::<Vec<Task>>(&content) {
+                Ok(tasks) => {
+                    let count = tasks.len();
+                    for task in tasks {
+                        db.upsert(&task)?;
+                    }
+                    println!("Imported {} tasks", count);
+                }
+                Err(e) => {
+                    eprintln!("Failed to parse YAML: {}", e);
+                    std::process::exit(1);
                 }
             }
-            println!("Imported tasks");
         }
 
         Commands::Export {
             file,
             status,
-            tags: _,
+            tags,
         } => {
-            let tasks = match status {
-                Some(s) => db.list_by_status(&parse_status(&s.0))?,
+            let mut tasks = match status {
+                Some(s) => db.list_by_status(&s.0)?,
                 None => db.list_all()?,
             };
-            let yaml = serde_yaml::to_string(&tasks)?;
+            if !tags.is_empty() {
+                tasks.retain(|t| tags.iter().any(|tag| t.tags.contains(tag)));
+            }
+            let yaml = serde_yml::to_string(&tasks)?;
             std::fs::write(file, &yaml)?;
             println!("Exported {} tasks", tasks.len());
         }

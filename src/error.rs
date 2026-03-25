@@ -14,19 +14,17 @@ pub enum DagRobinError {
     #[error("Task '{task_id}' has dependent tasks\nHint: Use --force to delete anyway")]
     TaskHasDependents { task_id: String },
 
-    #[error(
-        "Cannot read file: '{path}'\nHint: Check if the file exists and you have read permissions"
-    )]
-    FileNotFound { path: String },
-
-    #[error("Cannot write file: '{path}'\nHint: Check if the directory exists and you have write permissions")]
-    FileWriteError { path: String },
+    #[error("IO error: {0}\nHint: Check file path and permissions")]
+    IoError(String),
 
     #[error("Database error: {0}\nHint: Check if the database path is valid")]
     DatabaseError(String),
 
     #[error("Invalid YAML format\nHint: Check the file format matches dagRobin task format")]
     InvalidYaml(String),
+
+    #[error("Invalid input: {message}")]
+    InvalidInput { message: String },
 }
 
 impl From<sled::Error> for DagRobinError {
@@ -37,21 +35,19 @@ impl From<sled::Error> for DagRobinError {
 
 impl From<std::io::Error> for DagRobinError {
     fn from(e: std::io::Error) -> Self {
-        DagRobinError::FileWriteError {
-            path: e.to_string(),
-        }
+        DagRobinError::IoError(e.to_string())
     }
 }
 
-impl From<serde_yaml::Error> for DagRobinError {
-    fn from(e: serde_yaml::Error) -> Self {
+impl From<serde_yml::Error> for DagRobinError {
+    fn from(e: serde_yml::Error) -> Self {
         DagRobinError::InvalidYaml(e.to_string())
     }
 }
 
 impl From<serde_json::Error> for DagRobinError {
     fn from(e: serde_json::Error) -> Self {
-        DagRobinError::InvalidYaml(e.to_string())
+        DagRobinError::DatabaseError(format!("JSON serialization error: {}", e))
     }
 }
 
