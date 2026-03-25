@@ -14,11 +14,21 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
     version = VERSION
 )]
 struct Cli {
-    #[arg(short, long, default_value = "dagrobin.db")]
-    db: PathBuf,
+    /// Database path. Defaults to ~/.local/share/dagRobin/dagrobin.db
+    #[arg(short, long)]
+    db: Option<PathBuf>,
 
     #[command(subcommand)]
     command: Commands,
+}
+
+fn default_db_path() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    PathBuf::from(home)
+        .join(".local")
+        .join("share")
+        .join("dagRobin")
+        .join("dagrobin.db")
 }
 
 #[derive(Subcommand, Clone)]
@@ -215,10 +225,21 @@ fn main() {
 
 fn run() -> Result<()> {
     let cli = Cli::parse();
-    let db_path = cli.db.to_str().ok_or_else(|| DagRobinError::InvalidInput {
+    let db_path = cli.db.unwrap_or_else(default_db_path);
+
+    // Ensure parent directory exists
+    if let Some(parent) = db_path.parent() {
+        if !parent.exists() {
+            std::fs::create_dir_all(parent).map_err(|e| DagRobinError::InvalidInput {
+                message: format!("Failed to create database directory {}: {}", parent.display(), e),
+            })?;
+        }
+    }
+
+    let db_str = db_path.to_str().ok_or_else(|| DagRobinError::InvalidInput {
         message: "Database path contains invalid UTF-8".to_string(),
     })?;
-    let db = Database::new(db_path)?;
+    let db = Database::new(db_str)?;
 
     match &cli.command {
         Commands::Add {

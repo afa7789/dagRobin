@@ -1,4 +1,4 @@
-.PHONY: build test lint clean install fmt check test-all
+.PHONY: build test lint clean install fmt check test-all tag
 
 # Build the project
 build:
@@ -50,6 +50,18 @@ run:
 # Full pipeline: format, lint, test
 ci: fmt lint test
 
+# Create a version tag (usage: make tag VERSION=0.2.0)
+tag:
+ifndef VERSION
+	$(error VERSION is required. Usage: make tag VERSION=0.2.0)
+endif
+	@sed -i '' 's/^version = ".*"/version = "$(VERSION)"/' Cargo.toml
+	@cargo check -q 2>/dev/null
+	@git add Cargo.toml Cargo.lock
+	@git commit -m "bump version to $(VERSION)"
+	@git tag v$(VERSION)
+	@echo "Tagged v$(VERSION). Push with: git push origin main --tags"
+
 # Help
 help:
 	@echo "Available targets:"
@@ -64,4 +76,5 @@ help:
 	@echo "  make clean      - Clean build artifacts"
 	@echo "  make install    - Install binary locally"
 	@echo "  make ci         - Run CI pipeline (fmt + lint + test)"
+	@echo "  make tag        - Create version tag (VERSION=x.y.z)"
 	@echo "  make help       - Show this help"
