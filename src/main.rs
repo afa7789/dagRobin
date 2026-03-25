@@ -66,7 +66,7 @@ enum Commands {
     Claim {
         id: String,
         #[arg(long, short)]
-        agent: String,
+        agent: Option<String>,
     },
     Delete {
         id: String,
@@ -314,6 +314,12 @@ fn run() -> Result<()> {
         }
 
         Commands::Claim { id, agent } => {
+            let agent = agent.clone().unwrap_or_else(|| {
+                std::env::var("AGENT")
+                    .or_else(|_| std::env::var("USER"))
+                    .unwrap_or_else(|_| "cli".to_string())
+            });
+
             let task = db.get(id).map_err(|_| DagRobinError::TaskNotFound {
                 task_id: id.clone(),
             })?;
@@ -425,11 +431,7 @@ fn run() -> Result<()> {
             }
         }
 
-        Commands::Export {
-            file,
-            status,
-            tags,
-        } => {
+        Commands::Export { file, status, tags } => {
             let mut tasks = match status {
                 Some(s) => db.list_by_status(&s.0)?,
                 None => db.list_all()?,
