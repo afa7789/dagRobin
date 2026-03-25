@@ -236,10 +236,7 @@ impl Database {
     /// ```
     pub fn ready_tasks(&self) -> Result<Vec<Task>> {
         let pending = self.list_by_status(&TaskStatus::Pending)?;
-        Ok(pending
-            .into_iter()
-            .filter(|t| self.is_ready(t))
-            .collect())
+        Ok(pending.into_iter().filter(|t| self.is_ready(t)).collect())
     }
 
     /// Returns tasks that are blocked by incomplete dependencies.

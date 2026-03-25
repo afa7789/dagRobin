@@ -231,14 +231,20 @@ fn run() -> Result<()> {
     if let Some(parent) = db_path.parent() {
         if !parent.exists() {
             std::fs::create_dir_all(parent).map_err(|e| DagRobinError::InvalidInput {
-                message: format!("Failed to create database directory {}: {}", parent.display(), e),
+                message: format!(
+                    "Failed to create database directory {}: {}",
+                    parent.display(),
+                    e
+                ),
             })?;
         }
     }
 
-    let db_str = db_path.to_str().ok_or_else(|| DagRobinError::InvalidInput {
-        message: "Database path contains invalid UTF-8".to_string(),
-    })?;
+    let db_str = db_path
+        .to_str()
+        .ok_or_else(|| DagRobinError::InvalidInput {
+            message: "Database path contains invalid UTF-8".to_string(),
+        })?;
     let db = Database::new(db_str)?;
 
     match &cli.command {
