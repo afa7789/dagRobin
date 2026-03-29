@@ -67,7 +67,7 @@ dagRobin get <task-id>
 # Only claim if status is "Pending"
 
 # To claim a task:
-dagRobin update <task-id> --status in_progress --metadata "agent=your-name"
+dagRobin update <task-id> --status in_progress --metadata "agent:your-name"
 ```
 
 If you try to work on a task that's already `in_progress`, another agent is already working on it. Don't duplicate the work!
@@ -208,7 +208,13 @@ dagRobin update t1 --status done
 dagRobin update t1 --title "New title"
 
 # Add notes/metadata
-dagRobin update t1 --metadata "notes=This was tricky, took 2 hours"
+dagRobin update t1 --metadata "notes:This was tricky, took 2 hours"
+
+# Multiple metadata (semicolon separates pairs, commas allowed in values)
+dagRobin update t1 --metadata "notes:a,b,c;tags:tech"
+
+# Or use multiple --metadata flags
+dagRobin update t1 --metadata "notes:test" --metadata "agent:me"
 ```
 
 ### Visualization
@@ -230,10 +236,10 @@ dagRobin graph --format dot --output diagram.dot
 # Save all tasks to a file
 dagRobin export my-tasks.yaml
 
-# Share with someone else
-dagRobin import their-tasks.yaml --merge
+# Merge with existing tasks (default - updates existing, adds new)
+dagRobin import their-tasks.yaml
 
-# Replace everything
+# Replace everything (deletes all existing tasks first)
 dagRobin import fresh-start.yaml --replace
 ```
 
@@ -308,7 +314,7 @@ Every session starts with: dagRobin ready
 1. dagRobin ready --format yaml
 2. dagRobin claim <task-id> --agent claudecode
 3. Do the work
-4. dagRobin update <task-id> --status done --metadata "agent=claudecode,completed=$(date +%s)"
+4. dagRobin update <task-id> --status done --metadata "agent:claudecode" --metadata "completed:$(date +%s)"
 
 ## Rules
 - ALWAYS use `dagRobin claim` before starting work
@@ -341,7 +347,7 @@ dagRobin ready --format yaml
 dagRobin check <task-id>
 
 # Assign to agent (update metadata)
-dagRobin update <task-id> --status in_progress --metadata "agent=worker-1"
+dagRobin update <task-id> --status in_progress --metadata "agent:worker-1"
 
 # Mark complete
 dagRobin update <task-id> --status done
@@ -363,12 +369,12 @@ You are a worker agent. Your workflow:
 dagRobin ready --format yaml
 
 # 2. Claim a task
-dagRobin update <task-id> --status in_progress --metadata "agent=worker-2,started=$(date +%s)"
+dagRobin update <task-id> --status in_progress --metadata "agent:worker-2" --metadata "started:$(date +%s)"
 
 # 3. Do the work (implement the feature, fix the bug, etc)
 
 # 4. Mark complete
-dagRobin update <task-id> --status done --metadata "agent=worker-2,completed=$(date +%s)"
+dagRobin update <task-id> --status done --metadata "agent:worker-2" --metadata "completed:$(date +%s)"
 
 # 5. Get next task
 dagRobin ready
@@ -383,17 +389,17 @@ dagRobin add api-worker "Build REST API" --deps auth-worker --priority 2 --tags 
 dagRobin add test-worker "Write integration tests" --deps api-worker --priority 3 --tags "testing"
 
 # Worker 1: Claims auth task
-dagRobin update auth-worker --status in_progress --metadata "agent=claudeaude"
+dagRobin update auth-worker --status in_progress --metadata "agent:claudeaude"
 # ... does auth work ...
 dagRobin update auth-worker --status done
 
 # Worker 2: Now api-worker is ready, claims it
-dagRobin update api-worker --status in_progress --metadata "agent=worker-2"
+dagRobin update api-worker --status in_progress --metadata "agent:worker-2"
 # ... does API work ...
 dagRobin update api-worker --status done
 
 # Worker 3: test-worker now ready
-dagRobin update test-worker --status in_progress --metadata "agent=worker-3"
+dagRobin update test-worker --status in_progress --metadata "agent:worker-3"
 ```
 
 ---

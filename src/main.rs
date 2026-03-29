@@ -91,6 +91,8 @@ enum Commands {
         title: Option<String>,
         #[arg(long)]
         description: Option<String>,
+        /// Metadata as key:value pairs. Use semicolon (;) to separate multiple pairs, comma (,) allowed in values
+        /// Examples: --metadata "notes:foo,bar;tags:tech" or --metadata "agent:me" --metadata "notes:test"
         #[arg(long)]
         metadata: Vec<String>,
     },
@@ -426,8 +428,14 @@ fn run() -> Result<()> {
                 task.description = Some(d.clone());
             }
             for m in metadata {
-                if let Some((k, v)) = m.split_once(':') {
-                    task.metadata.insert(k.to_string(), v.to_string());
+                for part in m.split(';') {
+                    if let Some((k, v)) = part.split_once(':') {
+                        let key = k.trim().to_string();
+                        let value = v.trim().to_string();
+                        if !key.is_empty() && !value.is_empty() {
+                            task.metadata.insert(key, value);
+                        }
+                    }
                 }
             }
             task.updated_at = chrono::Utc::now();
