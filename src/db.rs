@@ -15,7 +15,9 @@
 
 use crate::error::{DagRobinError, Result};
 use crate::task::{Task, TaskStatus};
+use serde::{Deserialize, Serialize};
 use sled::Tree;
+use std::collections::HashMap;
 
 /// Database for storing and querying tasks.
 ///
@@ -309,6 +311,61 @@ impl Database {
         Ok(dependents)
     }
 
+    /// Detects file-level conflicts between tasks.
+    ///
+    /// Returns a list of files that appear in two or more tasks,
+    /// along with the conflicting tasks for each file.
+    ///
+    /// # Arguments
+    ///
+    /// * `statuses` - If provided, only consider tasks with these statuses. If empty, considers all non-Done tasks.
+    /// * `ready_only` - If true, only consider tasks that are ready (deps satisfied).
+    pub fn file_conflicts(
+        &self,
+        statuses: &[TaskStatus],
+        ready_only: bool,
+    ) -> Result<Vec<FileConflict>> {
+        let tasks = if !statuses.is_empty() {
+            let mut all = Vec::new();
+            for status in statuses {
+                all.extend(self.list_by_status(status)?);
+            }
+            all
+        } else {
+            // Default: all non-Done tasks
+            let mut all = self.list_all()?;
+            all.retain(|t| t.status != TaskStatus::Done);
+            all
+        };
+
+        let tasks = if ready_only {
+            tasks.into_iter().filter(|t| self.is_ready(t)).collect()
+        } else {
+            tasks
+        };
+
+        // Build file -> tasks map
+        let mut file_map: HashMap<String, Vec<Task>> = HashMap::new();
+        for task in tasks {
+            let mut seen_files = std::collections::HashSet::new();
+            for file in &task.files {
+                if seen_files.insert(file.clone()) {
+                    file_map.entry(file.clone()).or_default().push(task.clone());
+                }
+            }
+        }
+
+        // Collect only entries with 2+ tasks
+        let mut conflicts: Vec<FileConflict> = file_map
+            .into_iter()
+            .filter(|(_, tasks)| tasks.len() > 1)
+            .map(|(file, tasks)| FileConflict { file, tasks })
+            .collect();
+
+        conflicts.sort_by(|a, b| a.file.cmp(&b.file));
+        Ok(conflicts)
+    }
+
     fn update_indices(&self, task: &Task) -> Result<()> {
         let status_key = format!("{:?}:{}", task.status, task.id);
         self.idx_status.insert(status_key, &[])?;
@@ -348,4 +405,11 @@ impl Database {
 
         Ok(())
     }
+}
+
+/// A file that is referenced by multiple tasks, indicating a conflict.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileConflict {
+    pub file: String,
+    pub tasks: Vec<Task>,
 }

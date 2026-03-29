@@ -449,3 +449,184 @@ mod complex_scenarios {
         assert_eq!(ready[0].id, "t2");
     }
 }
+
+mod file_conflicts {
+    use super::*;
+
+    #[test]
+    fn test_no_conflicts_disjoint_files() {
+        let (_dir, db) = helpers::create_test_db("conflicts_none.db");
+
+        let mut t1 = helpers::create_task("t1", "Task 1");
+        t1.files = vec!["src/a.rs".to_string()];
+        db.upsert(&t1).unwrap();
+
+        let mut t2 = helpers::create_task("t2", "Task 2");
+        t2.files = vec!["src/b.rs".to_string()];
+        db.upsert(&t2).unwrap();
+
+        let conflicts = db.file_conflicts(&[], false).unwrap();
+        assert!(conflicts.is_empty());
+    }
+
+    #[test]
+    fn test_single_conflict_two_tasks() {
+        let (_dir, db) = helpers::create_test_db("conflicts_single.db");
+
+        let mut t1 = helpers::create_task("t1", "Update config parser");
+        t1.files = vec!["src/main.rs".to_string()];
+        db.upsert(&t1).unwrap();
+
+        let mut t2 = helpers::create_task("t2", "Refactor logging");
+        t2.files = vec!["src/main.rs".to_string(), "src/log.rs".to_string()];
+        db.upsert(&t2).unwrap();
+
+        let conflicts = db.file_conflicts(&[], false).unwrap();
+        assert_eq!(conflicts.len(), 1);
+        assert_eq!(conflicts[0].file, "src/main.rs");
+        assert_eq!(conflicts[0].tasks.len(), 2);
+    }
+
+    #[test]
+    fn test_multiple_conflicts() {
+        let (_dir, db) = helpers::create_test_db("conflicts_multi.db");
+
+        let mut t1 = helpers::create_task("t1", "Task 1");
+        t1.files = vec!["src/a.rs".to_string(), "src/b.rs".to_string()];
+        db.upsert(&t1).unwrap();
+
+        let mut t2 = helpers::create_task("t2", "Task 2");
+        t2.files = vec!["src/a.rs".to_string(), "src/c.rs".to_string()];
+        db.upsert(&t2).unwrap();
+
+        let mut t3 = helpers::create_task("t3", "Task 3");
+        t3.files = vec!["src/b.rs".to_string(), "src/c.rs".to_string()];
+        db.upsert(&t3).unwrap();
+
+        let conflicts = db.file_conflicts(&[], false).unwrap();
+        assert_eq!(conflicts.len(), 3); // a.rs, b.rs, c.rs each have 2 tasks
+    }
+
+    #[test]
+    fn test_file_with_three_tasks() {
+        let (_dir, db) = helpers::create_test_db("conflicts_three.db");
+
+        let shared_file = "src/shared.rs".to_string();
+
+        let mut t1 = helpers::create_task("t1", "Task 1");
+        t1.files = vec![shared_file.clone()];
+        db.upsert(&t1).unwrap();
+
+        let mut t2 = helpers::create_task("t2", "Task 2");
+        t2.files = vec![shared_file.clone()];
+        db.upsert(&t2).unwrap();
+
+        let mut t3 = helpers::create_task("t3", "Task 3");
+        t3.files = vec![shared_file.clone()];
+        db.upsert(&t3).unwrap();
+
+        let conflicts = db.file_conflicts(&[], false).unwrap();
+        assert_eq!(conflicts.len(), 1);
+        assert_eq!(conflicts[0].tasks.len(), 3);
+    }
+
+    #[test]
+    fn test_done_tasks_excluded_by_default() {
+        let (_dir, db) = helpers::create_test_db("conflicts_done.db");
+
+        let mut t1 = helpers::create_task("t1", "Done task");
+        t1.status = TaskStatus::Done;
+        t1.files = vec!["src/main.rs".to_string()];
+        db.upsert(&t1).unwrap();
+
+        let mut t2 = helpers::create_task("t2", "Pending task");
+        t2.files = vec!["src/main.rs".to_string()];
+        db.upsert(&t2).unwrap();
+
+        let conflicts = db.file_conflicts(&[], false).unwrap();
+        assert!(conflicts.is_empty());
+    }
+
+    #[test]
+    fn test_status_filter() {
+        let (_dir, db) = helpers::create_test_db("conflicts_status.db");
+
+        let mut t1 = helpers::create_task("t1", "Pending task");
+        t1.files = vec!["src/main.rs".to_string()];
+        db.upsert(&t1).unwrap();
+
+        let mut t2 = helpers::create_task("t2", "In progress task");
+        t2.status = TaskStatus::InProgress;
+        t2.files = vec!["src/main.rs".to_string()];
+        db.upsert(&t2).unwrap();
+
+        // Filter to only Pending — only t1 matches, no conflict
+        let conflicts = db.file_conflicts(&[TaskStatus::Pending], false).unwrap();
+        assert!(conflicts.is_empty());
+
+        // Filter to Pending + InProgress — both match, conflict
+        let conflicts = db
+            .file_conflicts(&[TaskStatus::Pending, TaskStatus::InProgress], false)
+            .unwrap();
+        assert_eq!(conflicts.len(), 1);
+    }
+
+    #[test]
+    fn test_ready_only_filter() {
+        let (_dir, db) = helpers::create_test_db("conflicts_ready.db");
+
+        // t1 is pending with no deps (ready)
+        let mut t1 = helpers::create_task("t1", "Ready task");
+        t1.files = vec!["src/main.rs".to_string()];
+        db.upsert(&t1).unwrap();
+
+        // t2 depends on t3 (not ready)
+        let mut t2 = helpers::create_task("t2", "Blocked task");
+        t2.files = vec!["src/main.rs".to_string()];
+        t2.deps = vec!["t3".to_string()];
+        db.upsert(&t2).unwrap();
+
+        let t3 = helpers::create_task("t3", "Dep task");
+        db.upsert(&t3).unwrap();
+
+        // Without ready_only: t1 and t2 conflict
+        let conflicts = db.file_conflicts(&[], false).unwrap();
+        assert_eq!(conflicts.len(), 1);
+
+        // With ready_only: only t1 and t3 are ready, they don't share files
+        let conflicts = db.file_conflicts(&[], true).unwrap();
+        assert!(conflicts.is_empty());
+    }
+
+    #[test]
+    fn test_empty_files_no_conflict() {
+        let (_dir, db) = helpers::create_test_db("conflicts_empty.db");
+
+        let t1 = helpers::create_task("t1", "No files");
+        db.upsert(&t1).unwrap();
+
+        let t2 = helpers::create_task("t2", "Also no files");
+        db.upsert(&t2).unwrap();
+
+        let conflicts = db.file_conflicts(&[], false).unwrap();
+        assert!(conflicts.is_empty());
+    }
+
+    #[test]
+    fn test_duplicate_files_in_task_deduplicated() {
+        let (_dir, db) = helpers::create_test_db("conflicts_dedup.db");
+
+        let mut t1 = helpers::create_task("t1", "Task with dupes");
+        t1.files = vec!["src/main.rs".to_string(), "src/main.rs".to_string()];
+        db.upsert(&t1).unwrap();
+
+        let mut t2 = helpers::create_task("t2", "Other task");
+        t2.files = vec!["src/main.rs".to_string()];
+        db.upsert(&t2).unwrap();
+
+        let conflicts = db.file_conflicts(&[], false).unwrap();
+        assert_eq!(conflicts.len(), 1);
+        // t1 should appear only once despite listing the file twice
+        assert_eq!(conflicts[0].tasks.len(), 2);
+    }
+}

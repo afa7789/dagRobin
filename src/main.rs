@@ -112,6 +112,18 @@ enum Commands {
         #[arg(long)]
         tags: Vec<String>,
     },
+    /// Detect file-level conflicts between tasks
+    Conflicts {
+        /// Only consider tasks with this status (can be repeated)
+        #[arg(long)]
+        status: Vec<TaskStatusArg>,
+        /// Only check tasks that are ready (dependencies satisfied)
+        #[arg(long)]
+        ready_only: bool,
+        /// Output format
+        #[arg(short, long, default_value = "table")]
+        format: OutputFormat,
+    },
 }
 
 #[derive(Clone, ValueEnum)]
@@ -469,6 +481,68 @@ fn run() -> Result<()> {
             let yaml = serde_yml::to_string(&tasks)?;
             std::fs::write(file, &yaml)?;
             println!("Exported {} tasks", tasks.len());
+        }
+
+        Commands::Conflicts {
+            status,
+            ready_only,
+            format,
+        } => {
+            let statuses: Vec<_> = status.iter().map(|s| s.0).collect();
+            let conflicts = db.file_conflicts(&statuses, *ready_only)?;
+
+            if conflicts.is_empty() {
+                println!("No file conflicts detected.");
+                return Ok(());
+            }
+
+            match format {
+                OutputFormat::Json => {
+                    let data: Vec<_> = conflicts
+                        .iter()
+                        .map(|c| {
+                            let tasks: Vec<_> = c
+                                .tasks
+                                .iter()
+                                .map(|t| {
+                                    serde_json::json!({
+                                        "id": t.id,
+                                        "title": t.title,
+                                        "status": format!("{:?}", t.status),
+                                    })
+                                })
+                                .collect();
+                            serde_json::json!({
+                                "file": c.file,
+                                "tasks": tasks,
+                            })
+                        })
+                        .collect();
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({ "conflicts": data }))?
+                    );
+                }
+                OutputFormat::Yaml => {
+                    for c in &conflicts {
+                        println!("- file: {}", c.file);
+                        println!("  tasks:");
+                        for t in &c.tasks {
+                            println!("    - id: {}", t.id);
+                            println!("      title: {}", t.title);
+                            println!("      status: {:?}", t.status);
+                        }
+                    }
+                }
+                OutputFormat::Table => {
+                    for c in &conflicts {
+                        println!("Conflict: {}", c.file);
+                        for t in &c.tasks {
+                            println!("  - {}: \"{}\" ({:?})", t.id, t.title, t.status);
+                        }
+                    }
+                }
+            }
         }
     }
 

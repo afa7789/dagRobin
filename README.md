@@ -105,6 +105,7 @@ dagRobin ready
 - **See the big picture** - Visualize your task graph in ASCII, Mermaid, or DOT format
 - **Multiple agents, one source of truth** - Perfect for coordinating multiple AI agents
 - **Fast and lightweight** - Built in Rust, database embedded in a single file
+- **Conflict detection** - Detect file-level conflicts between tasks before agents step on each other
 - **Export/Import** - Share task lists as YAML files
 
 ---
@@ -166,6 +167,12 @@ dagRobin list --tags backend
 
 # Show blocked tasks (waiting on something)
 dagRobin blocked
+
+# Detect file conflicts between tasks
+dagRobin conflicts
+
+# Only check ready tasks, output as JSON
+dagRobin conflicts --ready-only --format json
 ```
 
 ### Claiming Tasks (Recommended)
@@ -315,6 +322,7 @@ dagRobin list                           # See all tasks
 dagRobin blocked                        # What's waiting on something
 dagRobin graph --format mermaid        # Visual overview
 dagRobin check <id>                    # Is this task ready? (exit code 0/1)
+dagRobin conflicts --ready-only        # File conflicts among ready tasks
 ```
 
 ### Orchestrator Agent Prompt
@@ -337,6 +345,9 @@ dagRobin update <task-id> --status in_progress --metadata "agent=worker-1"
 
 # Mark complete
 dagRobin update <task-id> --status done
+
+# Check for file conflicts before assigning parallel work
+dagRobin conflicts --ready-only --format json
 
 # See overall progress
 dagRobin list --format table

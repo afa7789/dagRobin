@@ -25,6 +25,12 @@ DELETE
   dagRobin delete <id>                Delete (must have no dependents)
   dagRobin delete <id> --force        Force delete
 
+CONFLICTS
+  dagRobin conflicts                  Show file conflicts between tasks
+  dagRobin conflicts --status pending Only check pending tasks
+  dagRobin conflicts --ready-only     Only check ready tasks
+  dagRobin conflicts --format json    JSON output for automation
+
 GRAPH & EXPORT
   dagRobin graph                      ASCII graph
   dagRobin graph --format mermaid     Mermaid diagram
