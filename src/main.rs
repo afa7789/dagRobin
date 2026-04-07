@@ -14,7 +14,7 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
     version = VERSION
 )]
 struct Cli {
-    /// Database path. Defaults to ~/.local/share/dagRobin/dagrobin.db
+    /// Database path. Resolution: -d flag > $DAGROBIN_DB > .dagrobin/db (walk-up) > global default
     #[arg(short, long)]
     db: Option<PathBuf>,
 
@@ -22,13 +22,45 @@ struct Cli {
     command: Commands,
 }
 
-fn default_db_path() -> PathBuf {
+fn global_db_path() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
     PathBuf::from(home)
         .join(".local")
         .join("share")
         .join("dagRobin")
         .join("dagrobin.db")
+}
+
+/// Resolve database path with priority:
+/// 1. DAGROBIN_DB env var
+/// 2. Walk up from CWD looking for .dagrobin/db
+/// 3. Global default ~/.local/share/dagRobin/dagrobin.db
+fn resolve_db_path() -> PathBuf {
+    // 1. Environment variable (inherited by subagents automatically)
+    if let Ok(p) = std::env::var("DAGROBIN_DB") {
+        return PathBuf::from(p);
+    }
+
+    // 2. Walk up from CWD looking for .dagrobin/ directory
+    if let Ok(mut dir) = std::env::current_dir() {
+        loop {
+            let candidate = dir.join(".dagrobin").join("db");
+            if candidate.exists() {
+                return candidate;
+            }
+            // Also check for .dagrobin as a file (legacy)
+            let legacy = dir.join(".dagrobin.db");
+            if legacy.exists() {
+                return legacy;
+            }
+            if !dir.pop() {
+                break;
+            }
+        }
+    }
+
+    // 3. Global fallback
+    global_db_path()
 }
 
 #[derive(Subcommand, Clone)]
@@ -114,6 +146,10 @@ enum Commands {
         #[arg(long)]
         tags: Vec<String>,
     },
+    /// Initialize .dagrobin/db in the current directory
+    Init,
+    /// Show which database path would be used
+    WhichDb,
     /// Detect file-level conflicts between tasks
     Conflicts {
         /// Only consider tasks with this status (can be repeated)
@@ -239,7 +275,39 @@ fn main() {
 
 fn run() -> Result<()> {
     let cli = Cli::parse();
-    let db_path = cli.db.unwrap_or_else(default_db_path);
+
+    // Handle commands that don't need the database
+    match &cli.command {
+        Commands::Init => {
+            let cwd = std::env::current_dir().map_err(|e| DagRobinError::InvalidInput {
+                message: format!("Cannot determine current directory: {}", e),
+            })?;
+            let dir = cwd.join(".dagrobin");
+            if !dir.exists() {
+                std::fs::create_dir_all(&dir).map_err(|e| DagRobinError::InvalidInput {
+                    message: format!("Failed to create .dagrobin/: {}", e),
+                })?;
+            }
+            let db_init_path = dir.join("db");
+            let _ = Database::new(
+                db_init_path
+                    .to_str()
+                    .ok_or_else(|| DagRobinError::InvalidInput {
+                        message: "Path contains invalid UTF-8".to_string(),
+                    })?,
+            )?;
+            println!("Initialized dagRobin at {}", db_init_path.display());
+            return Ok(());
+        }
+        Commands::WhichDb => {
+            let resolved = cli.db.unwrap_or_else(resolve_db_path);
+            println!("{}", resolved.display());
+            return Ok(());
+        }
+        _ => {}
+    }
+
+    let db_path = cli.db.unwrap_or_else(resolve_db_path);
 
     // Ensure parent directory exists
     if let Some(parent) = db_path.parent() {
@@ -490,6 +558,8 @@ fn run() -> Result<()> {
             std::fs::write(file, &yaml)?;
             println!("Exported {} tasks", tasks.len());
         }
+
+        Commands::Init | Commands::WhichDb => unreachable!("handled above"),
 
         Commands::Conflicts {
             status,
