@@ -6,7 +6,7 @@ pasted as-is.
 
 - New to dagRobin? Read the [README](./README.md) first.
 - Task file examples: [`examples/`](./examples/).
-- Full command reference: <https://afa7789.github.io/dagrobin/>
+- Full command reference: <https://afa7789.github.io/dagRobin/>
 
 ---
 

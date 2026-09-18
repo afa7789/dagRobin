@@ -8,7 +8,7 @@
 > 
 > [Agent Integration](#for-ai-agents) - Add to your CLAUDE.md for multi-agent coordination
 >
-> [Documentation site](https://afa7789.github.io/dagrobin/) - Full command reference
+> [Documentation site](https://afa7789.github.io/dagRobin/) - Full command reference
 >
 > [AGENTS.md](./AGENTS.md) - Drop-in protocol, prompts and shell patterns for agents
 >
@@ -155,7 +155,7 @@ cargo build --release
 cargo install --path .
 ```
 
-Full command reference: **<https://afa7789.github.io/dagrobin/>**
+Full command reference: **<https://afa7789.github.io/dagRobin/>**
 
 ---
 

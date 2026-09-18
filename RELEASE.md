@@ -103,4 +103,4 @@ dagRobin which-db
 push to `main` that touches `docs/`. Enable it once under
 **Settings → Pages → Source: GitHub Actions**.
 
-Live at <https://afa7789.github.io/dagrobin/>.
+Live at <https://afa7789.github.io/dagRobin/>.

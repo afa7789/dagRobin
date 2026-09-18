@@ -14,7 +14,7 @@ dagRobin --version
 Install downloads the prebuilt binary for your platform from the matching GitHub
 release and verifies its SHA256. Supported: **macOS and Linux, x86_64 and arm64.**
 
-- Full command reference: <https://afa7789.github.io/dagrobin/>
+- Full command reference: <https://afa7789.github.io/dagRobin/>
 - Agent protocol and drop-in prompts: [AGENTS.md](https://github.com/afa7789/dagrobin/blob/main/AGENTS.md)
 - Runnable task files: [examples/](https://github.com/afa7789/dagrobin/tree/main/examples)
 
