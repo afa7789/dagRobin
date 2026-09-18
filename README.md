@@ -128,7 +128,19 @@ dagRobin --version
 ```
 
 Install pulls the prebuilt binary for your platform from the matching GitHub release
-and verifies its SHA256. Supported: macOS and Linux, x86_64 and arm64.
+and verifies its SHA256. Supported: macOS and Linux, x86_64 and arm64. Update an npm install with `npm install -g dagrobin@latest` (or `dagRobin upgrade`, which delegates to npm).
+
+### Updating
+
+```bash
+# Installed from source or as a prebuilt binary — update in place:
+dagRobin upgrade            # download, verify SHA256, replace this binary
+dagRobin upgrade --check    # exit 0 = up to date, 1 = update available
+dagRobin upgrade --force    # reinstall even when already latest
+
+# Installed via npm — the upgrade command delegates to npm:
+npm install -g dagrobin@latest   # manual alternative to `dagRobin upgrade`
+```
 
 ### Prebuilt binary
 

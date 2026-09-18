@@ -21,6 +21,7 @@
   <div class="nav-group">
     <h4>Start</h4>
     <a href="#install">Installation</a>
+    <a href="#updating">Updating</a>
     <a href="#quickstart">Quick start</a>
     <a href="#concepts">Concepts</a>
     <a href="#database">Database resolution</a>
@@ -82,6 +83,15 @@ sudo mv dagRobin /usr/local/bin/</code></pre>
 <pre><code>git clone https://github.com/afa7789/dagRobin.git
 cd dagrobin
 make install        # cargo install --path .</code></pre>
+
+<h2 id="updating">Updating</h2>
+<pre><code># Source / prebuilt installs self-update in place:
+dagRobin upgrade             # download, verify SHA256, replace
+dagRobin upgrade --check     # exit 0 = up to date, 1 = update available
+dagRobin upgrade --force     # replace even if versions match
+
+# npm installs delegate to npm:
+npm install -g dagrobin@latest</code></pre>
 
 <h2 id="quickstart">Quick start</h2>
 <pre><code># 1. Initialize in your project root
@@ -319,6 +329,7 @@ dagRobin conflicts --ready-only
   <tr><td><code>graph</code></td><td>Render the DAG. <code>--format ascii|dot|mermaid --output</code></td></tr>
   <tr><td><code>import &lt;file&gt;</code></td><td>Load tasks from YAML. <code>--replace</code> wipes first.</td></tr>
   <tr><td><code>export &lt;file&gt;</code></td><td>Write tasks to YAML. <code>--status --tags</code></td></tr>
+  <tr><td><code>upgrade</code></td><td>Self-update from GitHub releases. <code>--check</code> compares only, <code>--force</code> reinstalls. npm installs delegate to <code>npm</code>.</td></tr>
 </table>
 
 <footer>

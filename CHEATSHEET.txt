@@ -52,6 +52,11 @@ GRAPH & EXPORT
   dagRobin export file.yaml           Export all to YAML
   dagRobin import file.yaml           Import from YAML
 
+UPGRADE
+  dagRobin upgrade                 Update to the latest release
+  dagRobin upgrade --check         Exit 0 if up to date, 1 if update available
+  dagRobin upgrade --force         Replace even if versions match
+
 STATUS VALUES: pending, in_progress, done, blocked
 
 EXAMPLE WORKFLOW:
