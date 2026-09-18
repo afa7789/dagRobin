@@ -10,6 +10,7 @@ Cargo.lock
 .DS_Store
 .claude
 .opencode
+.dagrobin/
 npm/bin/dagRobin
 npm/node_modules/
 npm/*.tgz
