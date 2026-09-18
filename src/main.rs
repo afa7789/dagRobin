@@ -200,6 +200,16 @@ enum Commands {
         #[arg(short, long, default_value = "table")]
         format: OutputFormat,
     },
+
+    /// Self-update: download the latest release, verify its SHA256 and replace this binary
+    Upgrade {
+        /// Compare versions only; exit 0 when up to date, 1 when an update exists
+        #[arg(long)]
+        check: bool,
+        /// Replace even when versions match
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 #[derive(Clone, ValueEnum)]
@@ -338,6 +348,10 @@ fn run() -> Result<()> {
         Commands::WhichDb => {
             let resolved = cli.db.unwrap_or_else(resolve_db_path);
             println!("{}", resolved.display());
+            return Ok(());
+        }
+        Commands::Upgrade { check, force } => {
+            dagrobin::upgrade::run(*check, *force)?;
             return Ok(());
         }
         _ => {}
@@ -599,7 +613,9 @@ fn run() -> Result<()> {
             println!("Exported {} tasks", tasks.len());
         }
 
-        Commands::Init | Commands::WhichDb => unreachable!("handled above"),
+        Commands::Init | Commands::WhichDb | Commands::Upgrade { .. } => {
+            unreachable!("handled above")
+        }
 
         Commands::Archive {
             ids,
