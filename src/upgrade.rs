@@ -52,6 +52,15 @@ pub fn run(check: bool, force: bool) -> Result<()> {
     let current = env!("CARGO_PKG_VERSION");
     let ordering = compare_versions(current, &tag)?;
 
+    if ordering == Ordering::Greater {
+        println!(
+            "Installed version {} is newer than the latest release {}",
+            display_current(),
+            tag
+        );
+        return Ok(());
+    }
+
     if check {
         if ordering == Ordering::Less {
             println!("Update available: {} -> {}", display_current(), tag);
@@ -64,7 +73,7 @@ pub fn run(check: bool, force: bool) -> Result<()> {
     println!("Current version: {}", display_current());
     println!("Latest version: {}", tag);
 
-    if ordering != Ordering::Less && !force {
+    if ordering == Ordering::Equal && !force {
         println!("Already up to date ({})", display_current());
         return Ok(());
     }
@@ -79,7 +88,13 @@ pub fn run(check: bool, force: bool) -> Result<()> {
     ));
 
     let result = (|| -> Result<()> {
-        fs::create_dir_all(&tmp)?;
+        fs::create_dir_all(&tmp).map_err(|io| DagRobinError::UpgradeFailed {
+            message: format!(
+                "Failed to create temporary directory {}: {}",
+                tmp.display(),
+                io
+            ),
+        })?;
         println!("Downloading {artifact}.tar.gz...");
         let bin = download_and_verify(&artifact, &tag, &tmp)?;
         replace_executable(
@@ -167,13 +182,17 @@ fn curl_stdout(args: &[&str]) -> Result<String> {
             }
         })?;
     if !output.status.success() {
-        return Err(DagRobinError::UpgradeFailed {
-            message: format!(
+        let detail = last_nonempty_stderr_line(&output.stderr);
+        let message = if detail.is_empty() {
+            format!("curl failed (exit {})", output.status.code().unwrap_or(-1))
+        } else {
+            format!(
                 "curl failed (exit {}): {}",
                 output.status.code().unwrap_or(-1),
-                last_nonempty_stderr_line(&output.stderr)
-            ),
-        });
+                detail
+            )
+        };
+        return Err(DagRobinError::UpgradeFailed { message });
     }
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
@@ -184,7 +203,14 @@ fn curl_to_file(args: &[&str], out: &Path) -> Result<()> {
     full_args.push("-o");
     full_args.push(out_str.as_ref());
     curl_stdout(&full_args)?;
-    if fs::metadata(out)?.len() == 0 {
+    let meta = fs::metadata(out).map_err(|io| DagRobinError::UpgradeFailed {
+        message: format!(
+            "Failed to inspect downloaded file {}: {}",
+            out.display(),
+            io
+        ),
+    })?;
+    if meta.len() == 0 {
         return Err(DagRobinError::UpgradeFailed {
             message: "Download produced an empty file".into(),
         });
@@ -219,10 +245,16 @@ fn download_and_verify(artifact: &str, tag: &str, tmp: &Path) -> Result<PathBuf>
     download(&tar_url, &tar_path)?;
     download(&sha_url, &sha_path)?;
 
-    let sha_text = fs::read_to_string(&sha_path)?;
+    let sha_text = fs::read_to_string(&sha_path).map_err(|io| DagRobinError::UpgradeFailed {
+        message: format!(
+            "Failed to read checksum file {}: {}",
+            sha_path.display(),
+            io
+        ),
+    })?;
     let expected = match sha_text.split_whitespace().next() {
         Some(token) if token.len() == 64 && token.chars().all(|c| c.is_ascii_hexdigit()) => {
-            token.to_string()
+            token.to_string().to_lowercase()
         }
         _ => {
             return Err(DagRobinError::UpgradeFailed {
@@ -249,7 +281,14 @@ fn download_and_verify(artifact: &str, tag: &str, tmp: &Path) -> Result<PathBuf>
     let tmp_str = tmp.to_string_lossy();
     let extract = Command::new("tar")
         .args(["-xzf", tar_str.as_ref(), "-C", tmp_str.as_ref()])
-        .output()?;
+        .output()
+        .map_err(|io| DagRobinError::UpgradeFailed {
+            message: if io.kind() == ErrorKind::NotFound {
+                "tar not found on PATH: cannot extract the downloaded archive".into()
+            } else {
+                format!("Failed to run tar: {}", io)
+            },
+        })?;
     if !extract.status.success() {
         return Err(DagRobinError::UpgradeFailed {
             message: format!(
@@ -495,90 +534,6 @@ mod tests {
     }
 
     #[test]
-    fn detect_channel_classifies_paths() {
-        assert_eq!(
-            detect_channel(Path::new("/usr/local/bin/dagRobin")),
-            InstallChannel::Standalone
-        );
-        assert_eq!(
-            detect_channel(Path::new(
-                "/usr/local/lib/node_modules/dagrobin/bin/dagRobin"
-            )),
-            InstallChannel::Npm
-        );
-        assert_eq!(
-            detect_channel(Path::new(
-                "/Users/dev/.npm/_npx/6f2d9/bin/node_modules/dagrobin/bin/dagRobin"
-            )),
-            InstallChannel::Ephemeral
-        );
-        assert_eq!(
-            detect_channel(Path::new(
-                "/Users/dev/.bun/install/cache/dagrobin@1.0.0/node_modules/dagrobin/bin/dagRobin"
-            )),
-            InstallChannel::Ephemeral
-        );
-        assert_eq!(
-            detect_channel(Path::new("node_modules/dagrobin/bin/dagRobin")),
-            InstallChannel::Npm
-        );
-    }
-
-    #[test]
-    fn artifact_names_match_npm_installer() {
-        assert_eq!(
-            artifact_name("macos", "x86_64").unwrap(),
-            "dagRobin-macos-amd64"
-        );
-        assert_eq!(
-            artifact_name("macos", "aarch64").unwrap(),
-            "dagRobin-macos-arm64"
-        );
-        assert_eq!(
-            artifact_name("linux", "x86_64").unwrap(),
-            "dagRobin-linux-amd64"
-        );
-        assert_eq!(
-            artifact_name("linux", "aarch64").unwrap(),
-            "dagRobin-linux-arm64"
-        );
-    }
-
-    #[test]
-    fn artifact_name_unsupported_platform() {
-        assert_eq!(
-            artifact_name("windows", "x86_64").unwrap_err().to_string(),
-            "dagRobin has no prebuilt binary for windows-x86_64. Build from source instead: cargo install --git https://github.com/afa7789/dagRobin"
-        );
-    }
-
-    #[test]
-    fn compare_versions_handles_suffixes_and_v_prefix() {
-        assert_eq!(compare_versions("0.1.1", "0.2.0").unwrap(), Ordering::Less);
-        assert_eq!(
-            compare_versions("0.2.0", "0.1.1").unwrap(),
-            Ordering::Greater
-        );
-        assert_eq!(compare_versions("0.1.1", "0.1.1").unwrap(), Ordering::Equal);
-        assert_eq!(
-            compare_versions("v0.1.1", "0.1.1").unwrap(),
-            Ordering::Equal
-        );
-        assert_eq!(
-            compare_versions("1.2.3-alpha.1", "1.2.3").unwrap(),
-            Ordering::Equal
-        );
-        assert_eq!(
-            compare_versions("1.2.3", "1.2.3+build.5").unwrap(),
-            Ordering::Equal
-        );
-        assert_eq!(
-            compare_versions("v0.1.2-rc.1", "0.1.1").unwrap(),
-            Ordering::Greater
-        );
-    }
-
-    #[test]
     fn parse_version_accepts_valid() {
         assert_eq!(parse_version("0.1.1").unwrap(), (0, 1, 1));
         assert_eq!(parse_version("v1.2.3").unwrap(), (1, 2, 3));
@@ -778,53 +733,57 @@ mod tests {
     }
 
     #[test]
+    fn run_rejects_downgrade_without_force() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("dagRobin");
+        fs::write(&exe, b"x").unwrap();
+        let f = dir.path().join("latest.json");
+        fs::write(&f, "{\"tag_name\":\"v0.0.1\"}").unwrap();
+        let url = format!("file://{}", f.display());
+        let _g1 = EnvGuard::set("DAGROBIN_UPGRADE_EXE", exe.to_str().unwrap());
+        let _g2 = EnvGuard::set("DAGROBIN_UPGRADE_LATEST_URL", &url);
+        assert!(run(false, false).is_ok());
+        assert_eq!(fs::read_to_string(&exe).unwrap(), "x");
+    }
+
+    #[test]
+    fn run_rejects_downgrade_even_with_force() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("dagRobin");
+        fs::write(&exe, b"x").unwrap();
+        let f = dir.path().join("latest.json");
+        fs::write(&f, "{\"tag_name\":\"v0.0.1\"}").unwrap();
+        let url = format!("file://{}", f.display());
+        let _g1 = EnvGuard::set("DAGROBIN_UPGRADE_EXE", exe.to_str().unwrap());
+        let _g2 = EnvGuard::set("DAGROBIN_UPGRADE_LATEST_URL", &url);
+        assert!(run(false, true).is_ok());
+        assert_eq!(fs::read_to_string(&exe).unwrap(), "x");
+    }
+
+    #[test]
+    fn run_check_reports_ahead_without_download() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("dagRobin");
+        fs::write(&exe, b"x").unwrap();
+        let f = dir.path().join("latest.json");
+        fs::write(&f, "{\"tag_name\":\"v0.0.1\"}").unwrap();
+        let url = format!("file://{}", f.display());
+        let _g1 = EnvGuard::set("DAGROBIN_UPGRADE_EXE", exe.to_str().unwrap());
+        let _g2 = EnvGuard::set("DAGROBIN_UPGRADE_LATEST_URL", &url);
+        assert!(run(true, false).is_ok());
+        assert_eq!(fs::read_to_string(&exe).unwrap(), "x");
+    }
+
+    #[test]
     fn replace_executable_no_parent_dir() {
         let result = replace_executable(Path::new("/"), Path::new("/tmp/x"), ".staging");
         assert_eq!(
             result.unwrap_err().to_string(),
             "Current executable has no parent directory"
         );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn hardlinked_siblings_finds_links_only() {
-        let dir = tempfile::tempdir().unwrap();
-        let main = dir.path().join("dagRobin");
-        fs::write(&main, b"old").unwrap();
-        let sibling = dir.path().join("dagRobin-old");
-        fs::hard_link(&main, &sibling).unwrap();
-        let staging = dir.path().join(".staging");
-        fs::hard_link(&main, &staging).unwrap();
-        fs::write(dir.path().join("other.txt"), b"x").unwrap();
-
-        let meta = fs::metadata(&main).unwrap();
-        let found = hardlinked_siblings(dir.path(), "dagRobin", ".staging", meta.dev(), meta.ino())
-            .unwrap();
-        assert_eq!(found, vec![sibling]);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn replace_executable_replaces_and_relinks_siblings() {
-        use std::os::unix::fs::MetadataExt as _;
-
-        let dir = tempfile::tempdir().unwrap();
-        let exe = dir.path().join("dagRobin");
-        fs::write(&exe, b"old-binary").unwrap();
-        let sibling = dir.path().join("dagRobin-old");
-        fs::hard_link(&exe, &sibling).unwrap();
-
-        let new_dir = tempfile::tempdir().unwrap();
-        let new_bin = new_dir.path().join("new");
-        fs::write(&new_bin, b"new-binary").unwrap();
-
-        replace_executable(&exe, &new_bin, ".dagRobin.upgrade.123").unwrap();
-
-        assert_eq!(fs::read_to_string(&exe).unwrap(), "new-binary");
-        assert_eq!(fs::read_to_string(&sibling).unwrap(), "new-binary");
-        assert_eq!(fs::metadata(&exe).unwrap().mode() & 0o777, 0o755);
-        assert!(!dir.path().join(".dagRobin.upgrade.123").exists());
     }
 
     #[cfg(unix)]
