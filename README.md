@@ -134,7 +134,7 @@ and verifies its SHA256. Supported: macOS and Linux, x86_64 and arm64.
 
 ```bash
 # Example: macOS ARM (Apple Silicon)
-curl -L https://github.com/afa7789/dagrobin/releases/latest/download/dagRobin-macos-arm64.tar.gz | tar xz
+curl -L https://github.com/afa7789/dagRobin/releases/latest/download/dagRobin-macos-arm64.tar.gz | tar xz
 sudo mv dagRobin /usr/local/bin/
 ```
 

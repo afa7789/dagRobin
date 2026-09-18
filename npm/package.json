@@ -4,10 +4,10 @@
   "description": "DAG-based task manager for AI agents — a shared task database for coordinating multiple agents",
   "keywords": ["dag", "tasks", "agents", "ai", "orchestration", "cli"],
   "homepage": "https://afa7789.github.io/dagRobin/",
-  "bugs": "https://github.com/afa7789/dagrobin/issues",
+  "bugs": "https://github.com/afa7789/dagRobin/issues",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/afa7789/dagrobin.git"
+    "url": "git+https://github.com/afa7789/dagRobin.git"
   },
   "license": "MIT",
   "author": "Arthur <afa7789@gmail.com>",

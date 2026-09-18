@@ -14,7 +14,7 @@ if (!fs.existsSync(binary)) {
   console.error(
     "dagRobin binary not found. Re-run the install step:\n" +
       "  npm rebuild dagrobin\n" +
-      "or install from source: cargo install --git https://github.com/afa7789/dagrobin"
+      "or install from source: cargo install --git https://github.com/afa7789/dagRobin"
   );
   process.exit(1);
 }

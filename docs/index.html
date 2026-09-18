@@ -47,7 +47,7 @@
 
   <div class="nav-group">
     <h4>Links</h4>
-    <a href="https://github.com/afa7789/dagrobin">GitHub</a>
+    <a href="https://github.com/afa7789/dagRobin">GitHub</a>
     <a href="https://www.npmjs.com/package/dagrobin">npm</a>
   </div>
 
@@ -75,11 +75,11 @@ dagRobin --version</code></pre>
 <p>Install downloads the prebuilt binary for your platform from the matching GitHub release and verifies its SHA256 checksum. Supported: macOS and Linux, x86_64 and arm64.</p>
 
 <h3>Prebuilt binary</h3>
-<pre><code>curl -L https://github.com/afa7789/dagrobin/releases/latest/download/dagRobin-macos-arm64.tar.gz | tar xz
+<pre><code>curl -L https://github.com/afa7789/dagRobin/releases/latest/download/dagRobin-macos-arm64.tar.gz | tar xz
 sudo mv dagRobin /usr/local/bin/</code></pre>
 
 <h3>From source</h3>
-<pre><code>git clone https://github.com/afa7789/dagrobin.git
+<pre><code>git clone https://github.com/afa7789/dagRobin.git
 cd dagrobin
 make install        # cargo install --path .</code></pre>
 
@@ -235,7 +235,7 @@ dagRobin export done.yaml --status done    # filtered snapshot</code></pre>
 
 <h2 id="agents">AI agent integration</h2>
 <p>Drop this into your <code>CLAUDE.md</code> (or the equivalent for your tool) so every agent follows the same protocol.</p>
-<p>The complete protocol — worker and orchestrator blocks, race-safe claiming, and the mistakes agents actually make — is in <a href="https://github.com/afa7789/dagrobin/blob/main/AGENTS.md">AGENTS.md</a>. The short version:</p>
+<p>The complete protocol — worker and orchestrator blocks, race-safe claiming, and the mistakes agents actually make — is in <a href="https://github.com/afa7789/dagRobin/blob/main/AGENTS.md">AGENTS.md</a>. The short version:</p>
 <pre><code>## Task coordination — dagRobin
 
 Before starting ANY work:
@@ -255,9 +255,9 @@ Rules:
 <p>Three task files in the repo, each demonstrating one pattern. They import cleanly into a fresh database.</p>
 <table>
   <tr><th>File</th><th>Pattern</th></tr>
-  <tr><td><a href="https://github.com/afa7789/dagrobin/blob/main/examples/01-web-app.yaml"><code>01-web-app.yaml</code></a></td><td>A dependency chain — a feature built front to back, in order.</td></tr>
-  <tr><td><a href="https://github.com/afa7789/dagrobin/blob/main/examples/02-parallel-round.yaml"><code>02-parallel-round.yaml</code></a></td><td>Maximum parallelism — five independent tasks converging on one integration task.</td></tr>
-  <tr><td><a href="https://github.com/afa7789/dagrobin/blob/main/examples/03-bugfix-round.yaml"><code>03-bugfix-round.yaml</code></a></td><td>Triage — no dependencies; priority does the ordering.</td></tr>
+  <tr><td><a href="https://github.com/afa7789/dagRobin/blob/main/examples/01-web-app.yaml"><code>01-web-app.yaml</code></a></td><td>A dependency chain — a feature built front to back, in order.</td></tr>
+  <tr><td><a href="https://github.com/afa7789/dagRobin/blob/main/examples/02-parallel-round.yaml"><code>02-parallel-round.yaml</code></a></td><td>Maximum parallelism — five independent tasks converging on one integration task.</td></tr>
+  <tr><td><a href="https://github.com/afa7789/dagRobin/blob/main/examples/03-bugfix-round.yaml"><code>03-bugfix-round.yaml</code></a></td><td>Triage — no dependencies; priority does the ordering.</td></tr>
 </table>
 
 <p>Try one against a scratch database, so nothing real is touched:</p>
@@ -286,7 +286,7 @@ dagRobin conflicts --ready-only
 #   - rogue: "Also edits the header" (Pending)
 #   - ui-header: "Site header component" (Pending)</code></pre>
 
-<p>Full walkthrough: <a href="https://github.com/afa7789/dagrobin/tree/main/examples">examples/README.md</a>. Agent-side protocol, drop-in prompts and shell patterns: <a href="https://github.com/afa7789/dagrobin/blob/main/AGENTS.md">AGENTS.md</a>.</p>
+<p>Full walkthrough: <a href="https://github.com/afa7789/dagRobin/tree/main/examples">examples/README.md</a>. Agent-side protocol, drop-in prompts and shell patterns: <a href="https://github.com/afa7789/dagRobin/blob/main/AGENTS.md">AGENTS.md</a>.</p>
 
 <h2 id="rounds">Running big rounds</h2>
 <ol>
@@ -322,7 +322,7 @@ dagRobin conflicts --ready-only
 </table>
 
 <footer>
-  <p>dagRobin is MIT licensed. Source and issues on <a href="https://github.com/afa7789/dagrobin">GitHub</a>.</p>
+  <p>dagRobin is MIT licensed. Source and issues on <a href="https://github.com/afa7789/dagRobin">GitHub</a>.</p>
 </footer>
 
 </main>

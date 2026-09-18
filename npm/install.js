@@ -12,7 +12,7 @@ const crypto = require("crypto");
 const { execFileSync } = require("child_process");
 
 const { version } = require("./package.json");
-const REPO = "afa7789/dagrobin";
+const REPO = "afa7789/dagRobin";
 const BIN_DIR = path.join(__dirname, "bin");
 const BIN_PATH = path.join(BIN_DIR, "dagRobin");
 

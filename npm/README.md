@@ -15,8 +15,8 @@ Install downloads the prebuilt binary for your platform from the matching GitHub
 release and verifies its SHA256. Supported: **macOS and Linux, x86_64 and arm64.**
 
 - Full command reference: <https://afa7789.github.io/dagRobin/>
-- Agent protocol and drop-in prompts: [AGENTS.md](https://github.com/afa7789/dagrobin/blob/main/AGENTS.md)
-- Runnable task files: [examples/](https://github.com/afa7789/dagrobin/tree/main/examples)
+- Agent protocol and drop-in prompts: [AGENTS.md](https://github.com/afa7789/dagRobin/blob/main/AGENTS.md)
+- Runnable task files: [examples/](https://github.com/afa7789/dagRobin/tree/main/examples)
 
 ---
 
@@ -150,11 +150,11 @@ All listings accept `--format table|json|yaml`.
 
 ```bash
 # Prebuilt binary
-curl -L https://github.com/afa7789/dagrobin/releases/latest/download/dagRobin-macos-arm64.tar.gz | tar xz
+curl -L https://github.com/afa7789/dagRobin/releases/latest/download/dagRobin-macos-arm64.tar.gz | tar xz
 sudo mv dagRobin /usr/local/bin/
 
 # From source
-cargo install --git https://github.com/afa7789/dagrobin
+cargo install --git https://github.com/afa7789/dagRobin
 ```
 
 Windows is not supported. macOS and Linux only.
