@@ -28,3 +28,4 @@
 pub mod db;
 pub mod error;
 pub mod task;
+pub mod upgrade;
