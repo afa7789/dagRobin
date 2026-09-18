@@ -25,6 +25,9 @@ pub enum DagRobinError {
 
     #[error("Invalid input: {message}")]
     InvalidInput { message: String },
+
+    #[error("{message}")]
+    UpgradeFailed { message: String },
 }
 
 impl From<sled::Error> for DagRobinError {
