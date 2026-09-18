@@ -1,6 +1,6 @@
 {
   "name": "dagrobin",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "DAG-based task manager for AI agents — a shared task database for coordinating multiple agents",
   "keywords": ["dag", "tasks", "agents", "ai", "orchestration", "cli"],
   "homepage": "https://afa7789.github.io/dagRobin/",

@@ -1,6 +1,6 @@
 [package]
 name = "dagrobin"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["Arthur <afa7789@gmail.com>"]
 description = "DAG-based task manager for AI agents"
