@@ -56,8 +56,9 @@ ifndef VERSION
 	$(error VERSION is required. Usage: make tag VERSION=0.2.0)
 endif
 	@sed -i '' 's/^version = ".*"/version = "$(VERSION)"/' Cargo.toml
+	@sed -i '' 's/^  "version": ".*"/  "version": "$(VERSION)"/' npm/package.json
 	@cargo check -q 2>/dev/null
-	@git add Cargo.toml Cargo.lock
+	@git add Cargo.toml Cargo.lock npm/package.json
 	@git commit -m "bump version to $(VERSION)"
 	@git tag v$(VERSION)
 	@echo "Tagged v$(VERSION). Push with: git push origin main --tags"

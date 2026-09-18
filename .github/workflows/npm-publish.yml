@@ -1,0 +1,41 @@
+name: npm publish
+
+# Manual: run after the release workflow has published the binaries for the tag,
+# because the npm postinstall downloads them from that release.
+# Requires an NPM_TOKEN repository secret with publish rights.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Git tag to publish (e.g. v0.1.0)"
+        required: true
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Verify version matches tag
+        run: |
+          pkg=$(node -p "require('./npm/package.json').version")
+          if [ "v$pkg" != "${{ inputs.tag }}" ]; then
+            echo "npm/package.json is $pkg but tag is ${{ inputs.tag }}"
+            exit 1
+          fi
+
+      - name: Publish
+        run: npm publish --access public
+        working-directory: npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

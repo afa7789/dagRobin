@@ -1,0 +1,27 @@
+{
+  "name": "dagrobin",
+  "version": "0.1.0",
+  "description": "DAG-based task manager for AI agents — a shared task database for coordinating multiple agents",
+  "keywords": ["dag", "tasks", "agents", "ai", "orchestration", "cli"],
+  "homepage": "https://afa7789.github.io/dagrobin/",
+  "bugs": "https://github.com/afa7789/dagrobin/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/afa7789/dagrobin.git"
+  },
+  "license": "MIT",
+  "author": "Arthur <afa7789@gmail.com>",
+  "bin": {
+    "dagRobin": "bin/dagrobin.js",
+    "dagrobin": "bin/dagrobin.js"
+  },
+  "files": ["bin/dagrobin.js", "install.js", "README.md", "LICENSE"],
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "os": ["darwin", "linux"],
+  "cpu": ["x64", "arm64"]
+}

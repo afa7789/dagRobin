@@ -55,3 +55,52 @@ Each artifact includes a `.sha256` checksum file.
 curl -L https://github.com/afa7789/dagRobin/releases/latest/download/dagRobin-macos-arm64.tar.gz | tar xz
 sudo mv dagRobin /usr/local/bin/
 ```
+
+---
+
+## npm distribution
+
+The `npm/` folder publishes a thin wrapper package (`dagrobin`) whose
+`postinstall` downloads the binary for the user's platform from the GitHub
+release of the same version and verifies its SHA256.
+
+**Order matters:** publish to npm only *after* the release workflow has finished
+and the `.tar.gz` + `.sha256` assets exist for that tag — otherwise every
+`npm install` fails at postinstall.
+
+### Release checklist
+
+```bash
+# 1. Bump both versions (make tag does Cargo.toml + npm/package.json)
+make tag VERSION=0.2.0
+git push origin main --tags
+
+# 2. Wait for the Release workflow to attach the binaries
+gh run watch
+gh release view v0.2.0
+
+# 3. Publish to npm
+cd npm
+npm publish --access public      # needs npm login, or NODE_AUTH_TOKEN
+```
+
+Or run the **npm publish** workflow manually from the Actions tab with the tag
+as input — it requires an `NPM_TOKEN` repository secret.
+
+### Verifying a published package
+
+```bash
+npm install -g dagrobin
+dagRobin --version
+dagRobin which-db
+```
+
+---
+
+## Documentation site
+
+`docs/` is deployed to GitHub Pages by `.github/workflows/pages.yml` on every
+push to `main` that touches `docs/`. Enable it once under
+**Settings → Pages → Source: GitHub Actions**.
+
+Live at <https://afa7789.github.io/dagrobin/>.

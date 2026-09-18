@@ -238,7 +238,10 @@ impl Database {
     /// ```
     pub fn ready_tasks(&self) -> Result<Vec<Task>> {
         let pending = self.list_by_status(&TaskStatus::Pending)?;
-        Ok(pending.into_iter().filter(|t| self.is_ready(t)).collect())
+        Ok(pending
+            .into_iter()
+            .filter(|t| !t.archived && self.is_ready(t))
+            .collect())
     }
 
     /// Returns tasks that are blocked by incomplete dependencies.
@@ -271,7 +274,7 @@ impl Database {
     pub fn blocked_tasks(&self) -> Result<Vec<(Task, Vec<String>)>> {
         let pending = self.list_by_status(&TaskStatus::Pending)?;
         let mut blocked = Vec::new();
-        for task in pending {
+        for task in pending.into_iter().filter(|t| !t.archived) {
             let missing: Vec<String> = task
                 .deps
                 .iter()
@@ -366,6 +369,44 @@ impl Database {
         Ok(conflicts)
     }
 
+    /// Lists all non-archived tasks.
+    pub fn list_active(&self) -> Result<Vec<Task>> {
+        let mut tasks = self.list_all()?;
+        tasks.retain(|t| !t.archived);
+        Ok(tasks)
+    }
+
+    /// Sets the archived flag on a task.
+    pub fn set_archived(&self, id: &str, archived: bool) -> Result<()> {
+        let mut task = self.get(id)?;
+        task.archived = archived;
+        task.updated_at = chrono::Utc::now();
+        self.upsert(&task)
+    }
+
+    /// Deletes every task and clears all indices.
+    pub fn clear_all(&self) -> Result<usize> {
+        let tasks = self.list_all()?;
+        for task in &tasks {
+            self.delete(&task.id)?;
+        }
+        Ok(tasks.len())
+    }
+
+    /// Counts tasks by status, split between active and archived.
+    pub fn stats(&self) -> Result<Stats> {
+        let mut stats = Stats::default();
+        for task in self.list_all()? {
+            let bucket = if task.archived {
+                &mut stats.archived
+            } else {
+                &mut stats.active
+            };
+            bucket.add(task.status);
+        }
+        Ok(stats)
+    }
+
     fn update_indices(&self, task: &Task) -> Result<()> {
         let status_key = format!("{:?}:{}", task.status, task.id);
         self.idx_status.insert(status_key, &[])?;
@@ -412,4 +453,36 @@ impl Database {
 pub struct FileConflict {
     pub file: String,
     pub tasks: Vec<Task>,
+}
+
+/// Task counts for one bucket (active or archived).
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+pub struct StatusCounts {
+    pub pending: usize,
+    pub in_progress: usize,
+    pub done: usize,
+    pub blocked: usize,
+}
+
+impl StatusCounts {
+    fn add(&mut self, status: TaskStatus) {
+        match status {
+            TaskStatus::Pending => self.pending += 1,
+            TaskStatus::InProgress => self.in_progress += 1,
+            TaskStatus::Done => self.done += 1,
+            TaskStatus::Blocked => self.blocked += 1,
+        }
+    }
+
+    /// Total number of tasks in this bucket.
+    pub fn total(&self) -> usize {
+        self.pending + self.in_progress + self.done + self.blocked
+    }
+}
+
+/// Progress snapshot split between active (current round) and archived tasks.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+pub struct Stats {
+    pub active: StatusCounts,
+    pub archived: StatusCounts,
 }

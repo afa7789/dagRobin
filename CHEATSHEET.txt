@@ -31,6 +31,20 @@ CONFLICTS
   dagRobin conflicts --ready-only     Only check ready tasks
   dagRobin conflicts --format json    JSON output for automation
 
+PROGRESS / ARCHIVE / CLEAR
+  dagRobin status                     Round progress (archived excluded)
+  dagRobin progress                   Alias for status
+  dagRobin status --format json       Machine-readable counts
+  dagRobin archive                    Archive all done tasks
+  dagRobin archive <id> [<id>...]     Archive specific tasks
+  dagRobin archive --tags sprint-3    Archive by tag
+  dagRobin archive --all              Archive everything active
+  dagRobin archive --undo --all       Un-archive
+  dagRobin list --include-archived    Show archived too
+  dagRobin clear --yes                Delete ALL tasks (no undo)
+  dagRobin clear --yes --status done  Delete only done tasks
+  dagRobin clear --yes --archived-only  Delete the archive
+
 GRAPH & EXPORT
   dagRobin graph                      ASCII graph
   dagRobin graph --format mermaid     Mermaid diagram

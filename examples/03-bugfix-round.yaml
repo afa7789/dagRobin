@@ -1,0 +1,69 @@
+# A triage round. Bugs are independent, so priority does the ordering rather
+# than dependencies. Priority 1 = production is on fire, 5 = whenever.
+#
+# Load it with:  dagRobin import examples/03-bugfix-round.yaml
+# Work it with:  dagRobin ready --priority-min 2      # only the urgent half
+
+- id: bug-login-500
+  title: Login returns 500 for emails with a plus sign
+  priority: 1
+  tags: [bug, backend]
+  files: [src/api/sessions.rs]
+  metadata:
+    long-description: |
+      Reproduce: POST /sessions with email "user+tag@example.com" returns 500.
+      Cause to confirm: the email is being used unescaped in a LIKE pattern.
+
+      Fix the root cause, not the symptom — do not add a try/catch around it.
+      Add a regression test with a plus sign, a dot, and a unicode email.
+
+- id: bug-table-sort-reset
+  title: Table sort resets when a row updates
+  priority: 2
+  tags: [bug, frontend]
+  files: [src/components/DataTable.tsx]
+  metadata:
+    long-description: |
+      Sorting by any column, then receiving a row update over the websocket,
+      resets the sort to default. Expected: the sort survives data updates.
+      Likely cause: sort state is derived from props instead of held in state.
+      Add a test that updates rows while sorted and asserts the order holds.
+
+- id: bug-memory-leak
+  title: Worker memory grows without bound
+  priority: 1
+  tags: [bug, backend, perf]
+  files: [src/worker/mod.rs]
+  metadata:
+    long-description: |
+      The background worker grows ~40MB/hour under normal load and is OOM-killed
+      after about two days.
+
+      Investigate first, then fix: capture a heap profile, identify what is
+      retained, and report the finding in the task metadata before changing code.
+      Suspicion is the unbounded retry queue never dropping completed jobs.
+      Add a test asserting the queue drains.
+
+- id: bug-timezone-display
+  title: Timestamps display in UTC instead of local time
+  priority: 4
+  tags: [bug, frontend]
+  files: [src/lib/formatDate.ts]
+  metadata:
+    long-description: |
+      All timestamps render in UTC. They should render in the viewer's local
+      timezone using Intl.DateTimeFormat with no hardcoded timezone.
+      Keep ISO strings in the data layer — format at render time only.
+      Test with at least two non-UTC timezones.
+
+- id: bug-flaky-test
+  title: Quarantine and fix the flaky session test
+  priority: 3
+  tags: [bug, testing]
+  files: [tests/api.rs]
+  metadata:
+    long-description: |
+      tests/api.rs::session_expiry fails roughly one run in ten in CI.
+      Almost certainly a real race (wall-clock sleep vs. token exp), not test
+      noise. Fix the race — do not add a retry, do not increase the sleep, do
+      not mark it ignored permanently.

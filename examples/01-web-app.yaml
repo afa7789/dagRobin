@@ -1,0 +1,100 @@
+# A small feature round: build a REST API with auth, from empty repo to tests.
+# Load it with:  dagRobin import examples/01-web-app.yaml
+#
+# Shape of the DAG:
+#   setup-db ──> auth-middleware ──┬──> api-users ──> api-tests
+#                                  └──> api-sessions ┘
+
+- id: setup-db
+  title: Create the initial schema
+  priority: 1
+  tags: [backend, db]
+  files:
+    - migrations/001_init.sql
+  metadata:
+    long-description: |
+      Create migrations/001_init.sql with the initial Postgres schema.
+
+      Tables:
+        users(id uuid primary key default gen_random_uuid(),
+              email citext not null unique,
+              password_hash text not null,
+              created_at timestamptz not null default now())
+        sessions(id uuid primary key default gen_random_uuid(),
+                 user_id uuid not null references users(id) on delete cascade,
+                 expires_at timestamptz not null)
+
+      Migration file only — no application code in this task.
+      Done when: `make migrate` applies cleanly against a fresh database.
+
+- id: auth-middleware
+  title: JWT auth middleware
+  priority: 2
+  deps: [setup-db]
+  tags: [backend, auth]
+  files:
+    - src/auth/mod.rs
+  metadata:
+    long-description: |
+      Axum middleware that extracts the Bearer token from the Authorization
+      header and decodes it with the jsonwebtoken crate (HS256, JWT_SECRET
+      read from Config).
+
+      Claims struct: { sub: String (user_id), exp: usize, role: String }.
+      On a valid token: insert Claims into the request extensions.
+      On a missing or invalid token: return 401 with JSON {"error":"Unauthorized"}.
+
+      Tests: valid token passes through; expired token is 401; malformed header
+      is 401; missing header is 401.
+
+- id: api-users
+  title: Users endpoints
+  priority: 2
+  deps: [auth-middleware]
+  tags: [backend, api]
+  files:
+    - src/api/users.rs
+  metadata:
+    long-description: |
+      POST /users        — register. Body {email, password}. Hash with argon2.
+                           201 with {id, email}. 409 if the email already exists.
+      GET  /users/me     — requires auth. Returns {id, email, created_at} for
+                           the Claims.sub of the request.
+
+      Email is normalized at write time (trim, lowercase, NFC) and uniqueness is
+      enforced by the database unique index, not by an application-level check.
+
+- id: api-sessions
+  title: Login and logout endpoints
+  priority: 2
+  deps: [auth-middleware]
+  tags: [backend, api]
+  files:
+    - src/api/sessions.rs
+  metadata:
+    long-description: |
+      POST   /sessions   — login. Body {email, password}. On success issue a JWT
+                           (24h exp) and insert a sessions row. 200 with {token}.
+                           401 with {"error":"Invalid credentials"} otherwise —
+                           the same message for unknown email and wrong password.
+      DELETE /sessions   — logout. Requires auth. Deletes the session row. 204.
+
+- id: api-tests
+  title: Integration tests through the composed app
+  priority: 3
+  deps: [api-users, api-sessions]
+  tags: [testing]
+  files:
+    - tests/api.rs
+  metadata:
+    long-description: |
+      Integration tests that resolve every route through the COMPOSED app
+      (the real router), not by calling handlers directly — a handler test
+      passes whether or not the handler is actually mounted.
+
+      Cover: register -> login -> GET /users/me with the token -> logout ->
+      the same token is rejected afterwards. Plus the 409 duplicate-email path
+      and the 401 bad-credentials path.
+
+      Done when: `make test` is green and coverage of src/api and src/auth is
+      at or above 90%.

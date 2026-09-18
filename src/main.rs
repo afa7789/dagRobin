@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand, ValueEnum};
-use dagrobin::db::Database;
+use dagrobin::db::{Database, Stats};
 use dagrobin::error::{DagRobinError, Result};
 use dagrobin::task::{Task, TaskStatus};
 use std::path::PathBuf;
@@ -91,6 +91,9 @@ enum Commands {
         tags: Vec<String>,
         #[arg(short, long, default_value = "table")]
         format: OutputFormat,
+        /// Include archived tasks
+        #[arg(long)]
+        include_archived: bool,
     },
     Ready {
         #[arg(short, long, default_value = "yaml")]
@@ -150,6 +153,41 @@ enum Commands {
     Init,
     /// Show which database path would be used
     WhichDb,
+    /// Archive tasks so they stop counting toward the current round
+    Archive {
+        /// Task IDs to archive (default: every Done task)
+        ids: Vec<String>,
+        /// Archive all tasks with this status (can be repeated)
+        #[arg(long)]
+        status: Vec<TaskStatusArg>,
+        /// Archive all tasks carrying this tag (can be repeated)
+        #[arg(long, short = 't')]
+        tags: Vec<String>,
+        /// Archive every non-archived task
+        #[arg(long)]
+        all: bool,
+        /// Un-archive instead of archiving
+        #[arg(long)]
+        undo: bool,
+    },
+    /// Delete tasks permanently (wipes the round)
+    Clear {
+        /// Required confirmation
+        #[arg(long)]
+        yes: bool,
+        /// Only delete tasks with this status (can be repeated)
+        #[arg(long)]
+        status: Vec<TaskStatusArg>,
+        /// Only delete archived tasks
+        #[arg(long)]
+        archived_only: bool,
+    },
+    /// Show progress of the current round (archived tasks excluded)
+    #[command(alias = "progress")]
+    Status {
+        #[arg(short, long, default_value = "table")]
+        format: OutputFormat,
+    },
     /// Detect file-level conflicts between tasks
     Conflicts {
         /// Only consider tasks with this status (can be repeated)
@@ -289,13 +327,11 @@ fn run() -> Result<()> {
                 })?;
             }
             let db_init_path = dir.join("db");
-            let _ = Database::new(
-                db_init_path
-                    .to_str()
-                    .ok_or_else(|| DagRobinError::InvalidInput {
-                        message: "Path contains invalid UTF-8".to_string(),
-                    })?,
-            )?;
+            let _ = Database::new(db_init_path.to_str().ok_or_else(|| {
+                DagRobinError::InvalidInput {
+                    message: "Path contains invalid UTF-8".to_string(),
+                }
+            })?)?;
             println!("Initialized dagRobin at {}", db_init_path.display());
             return Ok(());
         }
@@ -363,12 +399,16 @@ fn run() -> Result<()> {
             priority_min,
             tags,
             format,
+            include_archived,
         } => {
             let mut tasks = match status {
                 Some(s) => db.list_by_status(&s.0)?,
                 None => db.list_all()?,
             };
 
+            if !*include_archived {
+                tasks.retain(|t| !t.archived);
+            }
             if let Some(min) = priority_min {
                 tasks.retain(|t| t.priority <= *min);
             }
@@ -561,6 +601,40 @@ fn run() -> Result<()> {
 
         Commands::Init | Commands::WhichDb => unreachable!("handled above"),
 
+        Commands::Archive {
+            ids,
+            status,
+            tags,
+            all,
+            undo,
+        } => {
+            let selected = select_tasks(&db, ids, status, tags, *all, *undo)?;
+            for id in &selected {
+                db.set_archived(id, !*undo)?;
+            }
+            let verb = if *undo { "Unarchived" } else { "Archived" };
+            println!("{} {} tasks", verb, selected.len());
+        }
+
+        Commands::Clear {
+            yes,
+            status,
+            archived_only,
+        } => {
+            if !*yes {
+                return Err(DagRobinError::InvalidInput {
+                    message: "Refusing to delete tasks without --yes".to_string(),
+                });
+            }
+            let count = clear_tasks(&db, status, *archived_only)?;
+            println!("Deleted {} tasks", count);
+        }
+
+        Commands::Status { format } => {
+            let stats = db.stats()?;
+            print_status(&stats, format)?;
+        }
+
         Commands::Conflicts {
             status,
             ready_only,
@@ -625,6 +699,102 @@ fn run() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Resolves which task IDs an `archive` invocation targets.
+fn select_tasks(
+    db: &Database,
+    ids: &[String],
+    status: &[TaskStatusArg],
+    tags: &[String],
+    all: bool,
+    undo: bool,
+) -> Result<Vec<String>> {
+    if !ids.is_empty() {
+        return Ok(ids.to_vec());
+    }
+
+    let mut tasks = db.list_all()?;
+    tasks.retain(|t| t.archived == undo);
+
+    if all {
+        return Ok(tasks.into_iter().map(|t| t.id).collect());
+    }
+
+    if !status.is_empty() {
+        let wanted: Vec<_> = status.iter().map(|s| s.0).collect();
+        tasks.retain(|t| wanted.contains(&t.status));
+    } else if tags.is_empty() {
+        tasks.retain(|t| t.status == TaskStatus::Done);
+    }
+
+    if !tags.is_empty() {
+        tasks.retain(|t| tags.iter().any(|tag| t.tags.contains(tag)));
+    }
+
+    Ok(tasks.into_iter().map(|t| t.id).collect())
+}
+
+/// Deletes tasks matching the `clear` filters, returning how many were removed.
+fn clear_tasks(db: &Database, status: &[TaskStatusArg], archived_only: bool) -> Result<usize> {
+    if status.is_empty() && !archived_only {
+        return db.clear_all();
+    }
+
+    let wanted: Vec<_> = status.iter().map(|s| s.0).collect();
+    let mut tasks = db.list_all()?;
+    if archived_only {
+        tasks.retain(|t| t.archived);
+    }
+    if !wanted.is_empty() {
+        tasks.retain(|t| wanted.contains(&t.status));
+    }
+    for task in &tasks {
+        db.delete(&task.id)?;
+    }
+    Ok(tasks.len())
+}
+
+fn percent(done: usize, total: usize) -> f64 {
+    if total == 0 {
+        0.0
+    } else {
+        done as f64 * 100.0 / total as f64
+    }
+}
+
+fn print_status(stats: &Stats, format: &OutputFormat) -> Result<()> {
+    match format {
+        OutputFormat::Json => println!("{}", serde_json::to_string_pretty(stats)?),
+        OutputFormat::Yaml => println!("{}", serde_yml::to_string(stats)?),
+        OutputFormat::Table => format_status_table(stats),
+    }
+    Ok(())
+}
+
+fn format_status_table(stats: &Stats) {
+    let a = stats.active;
+    let ar = stats.archived;
+    let all_done = a.done + ar.done;
+    let all_total = a.total() + ar.total();
+
+    println!(
+        "Round:     {}/{} ({:.0}%)",
+        a.done,
+        a.total(),
+        percent(a.done, a.total())
+    );
+    println!(
+        "  pending {}  in_progress {}  blocked {}",
+        a.pending, a.in_progress, a.blocked
+    );
+    println!("Archived:  {}/{}", ar.done, ar.total());
+    println!(
+        "All-time:  {}/{} ({:.0}%)",
+        all_done,
+        all_total,
+        percent(all_done, all_total)
+    );
 }
 
 fn generate_graph(tasks: &[Task], format: &GraphFormat) -> String {

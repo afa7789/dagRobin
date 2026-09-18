@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dagRobin — DAG task manager for AI agents</title>
+<meta name="description" content="dagRobin is a shared, DAG-based task database that lets multiple AI agents coordinate work without stepping on each other.">
+<link rel="icon" href="dagRobin.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="layout">
+
+<aside class="sidebar">
+  <div class="brand">
+    <img src="dagRobin.png" alt="">
+    <span>dagRobin</span>
+  </div>
+  <p class="tagline">Shared task tracking for multiple AI agents.</p>
+
+  <div class="nav-group">
+    <h4>Start</h4>
+    <a href="#install">Installation</a>
+    <a href="#quickstart">Quick start</a>
+    <a href="#concepts">Concepts</a>
+    <a href="#database">Database resolution</a>
+  </div>
+
+  <div class="nav-group">
+    <h4>Commands</h4>
+    <a href="#creating">Creating tasks</a>
+    <a href="#querying">Querying</a>
+    <a href="#working">Claiming &amp; updating</a>
+    <a href="#progress">Progress, archive, clear</a>
+    <a href="#conflicts">File conflicts</a>
+    <a href="#graph">Graph &amp; export</a>
+    <a href="#reference">Full reference</a>
+  </div>
+
+  <div class="nav-group">
+    <h4>Guides</h4>
+    <a href="#yaml">YAML schema</a>
+    <a href="#agents">AI agent integration</a>
+    <a href="#examples">Runnable examples</a>
+    <a href="#rounds">Running big rounds</a>
+  </div>
+
+  <div class="nav-group">
+    <h4>Links</h4>
+    <a href="https://github.com/afa7789/dagrobin">GitHub</a>
+    <a href="https://www.npmjs.com/package/dagrobin">npm</a>
+  </div>
+
+  <button id="theme-toggle" type="button">Toggle theme</button>
+</aside>
+
+<main>
+
+<section class="hero">
+  <h1>dagRobin</h1>
+  <p>A single source of truth for coordinating multiple AI agents. Tasks are a DAG: each one declares its dependencies, and dagRobin tells you what is ready, what is blocked, and who is already working on it.</p>
+  <div class="badges">
+    <span class="badge">Rust + Sled</span>
+    <span class="badge">macOS &amp; Linux</span>
+    <span class="badge">YAML import/export</span>
+    <span class="badge">MIT</span>
+  </div>
+</section>
+
+<h2 id="install">Installation</h2>
+
+<h3>npm — no Rust toolchain needed</h3>
+<pre><code>npm install -g dagrobin
+dagRobin --version</code></pre>
+<p>Install downloads the prebuilt binary for your platform from the matching GitHub release and verifies its SHA256 checksum. Supported: macOS and Linux, x86_64 and arm64.</p>
+
+<h3>Prebuilt binary</h3>
+<pre><code>curl -L https://github.com/afa7789/dagrobin/releases/latest/download/dagRobin-macos-arm64.tar.gz | tar xz
+sudo mv dagRobin /usr/local/bin/</code></pre>
+
+<h3>From source</h3>
+<pre><code>git clone https://github.com/afa7789/dagrobin.git
+cd dagrobin
+make install        # cargo install --path .</code></pre>
+
+<h2 id="quickstart">Quick start</h2>
+<pre><code># 1. Initialize in your project root
+cd /path/to/your/project
+dagRobin init                  # creates .dagrobin/db here
+echo '.dagrobin/' &gt;&gt; .gitignore
+
+# 2. Describe the work
+dagRobin add setup-db "Create schema"  --priority 1
+dagRobin add api      "Build API"      --deps setup-db
+dagRobin add ui       "Build UI"       --deps api
+
+# 3. Work it
+dagRobin ready                      # setup-db
+dagRobin claim setup-db -a alice    # mark it yours BEFORE starting
+dagRobin update setup-db --status done
+
+dagRobin ready                      # api is now unblocked
+dagRobin status                     # 1/3 (33%)</code></pre>
+
+<div class="note">
+  <strong>Always claim first.</strong> <code>claim</code> flips the task to <code>in_progress</code> and records the agent. It fails with exit code 1 if someone already holds it — that failure is the lock that stops two agents doing the same work.
+</div>
+
+<h2 id="concepts">Concepts</h2>
+<table>
+  <tr><th>Term</th><th>Meaning</th></tr>
+  <tr><td><strong>Task</strong></td><td>A unit of work with an id, title, priority, dependencies, files and free-form metadata.</td></tr>
+  <tr><td><strong>Ready</strong></td><td>Status <code>pending</code> and every dependency is <code>done</code>. This is what an agent should pick up.</td></tr>
+  <tr><td><strong>Blocked</strong></td><td>Pending, but at least one dependency is not done yet.</td></tr>
+  <tr><td><strong>Archived</strong></td><td>Still stored, but hidden from <code>list</code>, <code>ready</code>, <code>blocked</code> and the <code>status</code> round counter.</td></tr>
+  <tr><td><strong>Round</strong></td><td>The set of non-archived tasks — the batch of work you are running right now.</td></tr>
+</table>
+
+<p>Statuses: <code>pending</code> → <code>in_progress</code> → <code>done</code>, plus <code>blocked</code>. Priority is a number where <em>lower means more important</em> (<code>1</code> = must do first, <code>5</code> = nice to have).</p>
+
+<h2 id="database">Database resolution</h2>
+<p>dagRobin finds its database the way git finds <code>.git/</code>, so subagents running in any subdirectory automatically share one project database.</p>
+<table>
+  <tr><th>#</th><th>Source</th><th>Notes</th></tr>
+  <tr><td>1</td><td><code>-d / --db &lt;path&gt;</code></td><td>Explicit override.</td></tr>
+  <tr><td>2</td><td><code>$DAGROBIN_DB</code></td><td>Inherited by subprocesses and subagents automatically.</td></tr>
+  <tr><td>3</td><td><code>.dagrobin/db</code></td><td>Walk-up search from the current directory.</td></tr>
+  <tr><td>4</td><td><code>~/.local/share/dagRobin/dagrobin.db</code></td><td>Global fallback.</td></tr>
+</table>
+<pre><code>dagRobin init        # create .dagrobin/db in the current directory
+dagRobin which-db    # print the path that would actually be used</code></pre>
+
+<h2 id="creating">Creating tasks</h2>
+<pre><code># One-off
+dagRobin add t1 "Write documentation"
+dagRobin add t2 "Fix critical bug" --priority 1
+dagRobin add api "Build API" --deps setup-db --deps auth
+dagRobin add ui  "Build UI"  --tags frontend --files src/ui/mod.rs
+
+# Three or more tasks: describe them in YAML and import
+dagRobin import tasks.yaml
+dagRobin import tasks.yaml --replace   # wipe first, then import</code></pre>
+
+<h2 id="querying">Querying</h2>
+<pre><code>dagRobin ready                       # tasks whose deps are all done
+dagRobin ready --priority-min 2      # only priority 1 and 2
+dagRobin blocked                     # what is waiting, and on what
+dagRobin list                        # everything active
+dagRobin list --status in_progress   # filter by status
+dagRobin list --tags frontend        # filter by tag
+dagRobin list --include-archived     # archived tasks too
+dagRobin get api                     # full detail for one task
+dagRobin check api                   # exit 0 if ready, 1 if not</code></pre>
+<p>Every listing takes <code>--format table|json|yaml</code>. <code>check</code> prints nothing and is meant for shell scripts:</p>
+<pre><code>if dagRobin check api; then dagRobin claim api -a worker-1; fi</code></pre>
+
+<h2 id="working">Claiming &amp; updating</h2>
+<pre><code>dagRobin claim api -a worker-1           # exit 1 if already claimed
+dagRobin update api --status done
+dagRobin update api --title "New title"
+dagRobin update api --description "..."
+
+# Metadata: semicolon separates pairs, commas are allowed inside values
+dagRobin update api --metadata "notes:took 2h, tricky;reviewer:bob"
+dagRobin update api --metadata "notes:test" --metadata "agent:me"
+
+dagRobin delete api            # refuses if other tasks depend on it
+dagRobin delete api --force    # delete anyway</code></pre>
+
+<h2 id="progress">Progress, archive &amp; clear</h2>
+<p>Over a long-lived project the database accumulates hundreds of finished tasks, and <code>10/1230</code> tells you nothing about the feature you are shipping today. <code>archive</code> parks old work so the counter reflects the current round only.</p>
+
+<pre><code>dagRobin status          # alias: dagRobin progress</code></pre>
+<pre><code>Round:     10/120 (8%)
+  pending 108  in_progress 2  blocked 0
+Archived:  380/380
+All-time:  390/500 (78%)</code></pre>
+
+<pre><code># Before a big round: park what is finished
+dagRobin archive                              # default: every done task
+dagRobin archive t1 t2                        # specific ids
+dagRobin archive --status done --status blocked
+dagRobin archive --tags sprint-3
+dagRobin archive --all                        # everything still active
+dagRobin archive --undo --all                 # bring it all back
+
+# Permanent deletion — there is no undo
+dagRobin clear --yes
+dagRobin clear --yes --status done
+dagRobin clear --yes --archived-only</code></pre>
+
+<div class="note">
+  <strong>archive vs clear.</strong> <code>archive</code> keeps history — archived tasks still count under <em>All-time</em> and can be restored with <code>--undo</code>. <code>clear</code> deletes rows permanently and requires <code>--yes</code>.
+</div>
+
+<h2 id="conflicts">File conflicts</h2>
+<p>The <code>files:</code> field on a task declares what it will touch. Before dispatching agents in parallel, ask dagRobin which tasks collide.</p>
+<pre><code>dagRobin conflicts                         # all non-done tasks
+dagRobin conflicts --ready-only            # only tasks ready right now
+dagRobin conflicts --status pending
+dagRobin conflicts --format json           # for automation</code></pre>
+<pre><code>Conflict: src/main.rs
+  - implement-auth: "JWT middleware" (Pending)
+  - fix-main-routing: "Fix router" (Pending)</code></pre>
+<p>Resolution: either make one task depend on the other, or hand both to the same agent.</p>
+
+<h2 id="graph">Graph &amp; export</h2>
+<pre><code>dagRobin graph                             # ASCII tree
+dagRobin graph --format mermaid            # paste into Markdown
+dagRobin graph --format dot --output dag.dot
+dagRobin export tasks.yaml                 # snapshot everything
+dagRobin export done.yaml --status done    # filtered snapshot</code></pre>
+
+<h2 id="yaml">YAML schema</h2>
+<p>This is what <code>import</code> reads and <code>export</code> writes. Only <code>id</code> and <code>title</code> are required.</p>
+<pre><code>- id: implement-auth
+  title: JWT auth middleware
+  description: Short summary shown in listings
+  status: Pending            # Pending | InProgress | Done | Blocked
+  priority: 1                # lower = more important
+  deps: [setup-db]
+  files: [src/auth/mod.rs]   # used by `conflicts`
+  tags: [backend]
+  archived: false
+  metadata:
+    long-description: |
+      Axum middleware that extracts the Bearer token from the Authorization
+      header, decodes it with HS256 and JWT_SECRET from Config, and injects
+      Claims { sub, exp, role } into the request extensions.
+      On a missing or invalid token: 401 with JSON { "error": "Unauthorized" }.</code></pre>
+
+<div class="note">
+  <strong>Write a real <code>long-description</code>.</strong> Builder subagents have no access to the original conversation. That metadata field is their only source of truth — a task without it gets implemented by guessing.
+</div>
+
+<h2 id="agents">AI agent integration</h2>
+<p>Drop this into your <code>CLAUDE.md</code> (or the equivalent for your tool) so every agent follows the same protocol.</p>
+<p>The complete protocol — worker and orchestrator blocks, race-safe claiming, and the mistakes agents actually make — is in <a href="https://github.com/afa7789/dagrobin/blob/main/AGENTS.md">AGENTS.md</a>. The short version:</p>
+<pre><code>## Task coordination — dagRobin
+
+Before starting ANY work:
+1. `dagRobin ready` — see what is available
+2. `dagRobin claim &lt;id&gt; -a &lt;your-name&gt;` — claim it. Exit code 1 means
+   another agent already has it: pick a different task.
+3. Read `metadata.long-description` — that is the spec.
+4. Do the work.
+5. `dagRobin update &lt;id&gt; --status done`
+
+Rules:
+- The orchestrator creates and assigns tasks but NEVER claims them.
+- Workers claim before starting, always.
+- Check `dagRobin conflicts --ready-only` before dispatching parallel agents.</code></pre>
+
+<h2 id="examples">Runnable examples</h2>
+<p>Three task files in the repo, each demonstrating one pattern. They import cleanly into a fresh database.</p>
+<table>
+  <tr><th>File</th><th>Pattern</th></tr>
+  <tr><td><a href="https://github.com/afa7789/dagrobin/blob/main/examples/01-web-app.yaml"><code>01-web-app.yaml</code></a></td><td>A dependency chain — a feature built front to back, in order.</td></tr>
+  <tr><td><a href="https://github.com/afa7789/dagrobin/blob/main/examples/02-parallel-round.yaml"><code>02-parallel-round.yaml</code></a></td><td>Maximum parallelism — five independent tasks converging on one integration task.</td></tr>
+  <tr><td><a href="https://github.com/afa7789/dagrobin/blob/main/examples/03-bugfix-round.yaml"><code>03-bugfix-round.yaml</code></a></td><td>Triage — no dependencies; priority does the ordering.</td></tr>
+</table>
+
+<p>Try one against a scratch database, so nothing real is touched:</p>
+<pre><code>export DAGROBIN_DB=/tmp/dagrobin-demo
+rm -rf "$DAGROBIN_DB"
+
+dagRobin import examples/01-web-app.yaml
+dagRobin ready                    # setup-db — the only thing not blocked
+dagRobin status                   # Round: 0/5 (0%)
+
+dagRobin claim setup-db -a demo
+dagRobin get setup-db             # read metadata.long-description — the spec
+dagRobin update setup-db --status done
+
+dagRobin ready                    # auth-middleware unlocked
+dagRobin status                   # Round: 1/5 (20%)</code></pre>
+
+<p>Prove what <code>conflicts</code> is for by deliberately breaking the parallel round:</p>
+<pre><code>dagRobin import examples/02-parallel-round.yaml
+dagRobin conflicts --ready-only
+# No file conflicts detected.
+
+dagRobin add rogue "Also edits the header" --files src/components/Header.tsx
+dagRobin conflicts --ready-only
+# Conflict: src/components/Header.tsx
+#   - rogue: "Also edits the header" (Pending)
+#   - ui-header: "Site header component" (Pending)</code></pre>
+
+<p>Full walkthrough: <a href="https://github.com/afa7789/dagrobin/tree/main/examples">examples/README.md</a>. Agent-side protocol, drop-in prompts and shell patterns: <a href="https://github.com/afa7789/dagrobin/blob/main/AGENTS.md">AGENTS.md</a>.</p>
+
+<h2 id="rounds">Running big rounds</h2>
+<ol>
+  <li><code>dagRobin archive</code> — park the previous round so the counter starts clean.</li>
+  <li><code>dagRobin import round-5.yaml</code> — load the new batch (keep it to 15–20 tasks, 30–60 min each).</li>
+  <li><code>dagRobin conflicts --ready-only</code> — find file collisions and serialize them with dependencies.</li>
+  <li>Dispatch agents; each one claims, works, marks done.</li>
+  <li><code>dagRobin status</code> — watch the round fill up.</li>
+  <li><code>dagRobin export .claude/tasks-snapshot.yaml</code> — snapshot before the next round.</li>
+</ol>
+
+<h2 id="reference">Full command reference</h2>
+<table>
+  <tr><th>Command</th><th>What it does</th></tr>
+  <tr><td><code>init</code></td><td>Create <code>.dagrobin/db</code> in the current directory.</td></tr>
+  <tr><td><code>which-db</code></td><td>Print the database path that would be used.</td></tr>
+  <tr><td><code>add &lt;id&gt; &lt;title&gt;</code></td><td>Create a task. <code>--description --priority --deps --tags --files</code></td></tr>
+  <tr><td><code>get &lt;id&gt;</code></td><td>Show one task in full.</td></tr>
+  <tr><td><code>list</code></td><td>List tasks. <code>--status --priority-min --tags --include-archived --format</code></td></tr>
+  <tr><td><code>ready</code></td><td>Tasks whose dependencies are all done. <code>--priority-min --format</code></td></tr>
+  <tr><td><code>blocked</code></td><td>Pending tasks and the dependencies holding them. <code>--format</code></td></tr>
+  <tr><td><code>check &lt;id&gt;</code></td><td>Exit 0 if ready, 1 otherwise. No output.</td></tr>
+  <tr><td><code>claim &lt;id&gt;</code></td><td>Take ownership. <code>-a/--agent</code>; exit 1 if already claimed.</td></tr>
+  <tr><td><code>update &lt;id&gt;</code></td><td>Change a task. <code>--status --title --description --metadata</code></td></tr>
+  <tr><td><code>delete &lt;id&gt;</code></td><td>Remove a task. <code>--force</code> to ignore dependents.</td></tr>
+  <tr><td><code>status</code> / <code>progress</code></td><td>Round progress, archived counts and all-time totals. <code>--format</code></td></tr>
+  <tr><td><code>archive [ids…]</code></td><td>Hide tasks from the round. <code>--status --tags --all --undo</code></td></tr>
+  <tr><td><code>clear --yes</code></td><td>Delete permanently. <code>--status --archived-only</code></td></tr>
+  <tr><td><code>conflicts</code></td><td>Files touched by 2+ tasks. <code>--status --ready-only --format</code></td></tr>
+  <tr><td><code>graph</code></td><td>Render the DAG. <code>--format ascii|dot|mermaid --output</code></td></tr>
+  <tr><td><code>import &lt;file&gt;</code></td><td>Load tasks from YAML. <code>--replace</code> wipes first.</td></tr>
+  <tr><td><code>export &lt;file&gt;</code></td><td>Write tasks to YAML. <code>--status --tags</code></td></tr>
+</table>
+
+<footer>
+  <p>dagRobin is MIT licensed. Source and issues on <a href="https://github.com/afa7789/dagrobin">GitHub</a>.</p>
+</footer>
+
+</main>
+</div>
+
+<script>
+(function () {
+  var KEY = "dagrobin-theme";
+  var root = document.documentElement;
+  try {
+    var saved = localStorage.getItem(KEY);
+    if (saved) root.setAttribute("data-theme", saved);
+  } catch (e) {}
+
+  document.getElementById("theme-toggle").addEventListener("click", function () {
+    var dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    var current = root.getAttribute("data-theme") || (dark ? "dark" : "light");
+    var next = current === "dark" ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem(KEY, next); } catch (e) {}
+  });
+})();
+</script>
+</body>
+</html>

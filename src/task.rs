@@ -79,6 +79,9 @@ pub struct Task {
     /// Additional key-value metadata
     #[serde(default)]
     pub metadata: HashMap<String, String>,
+    /// Archived tasks are kept in the database but excluded from active queries
+    #[serde(default)]
+    pub archived: bool,
     /// When the task was created
     #[serde(default = "Utc::now")]
     pub created_at: DateTime<Utc>,
@@ -116,6 +119,7 @@ impl Task {
             files: Vec::new(),
             tags: Vec::new(),
             metadata: HashMap::new(),
+            archived: false,
             created_at: now,
             updated_at: now,
         }

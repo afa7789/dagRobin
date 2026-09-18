@@ -7,6 +7,12 @@
 > Single source of truth for coordinating multiple AI agents. Export/import as YAML, visualize dependencies, prevent duplicate work.
 > 
 > [Agent Integration](#for-ai-agents) - Add to your CLAUDE.md for multi-agent coordination
+>
+> [Documentation site](https://afa7789.github.io/dagrobin/) - Full command reference
+>
+> [AGENTS.md](./AGENTS.md) - Drop-in protocol, prompts and shell patterns for agents
+>
+> [examples/](./examples/) - Runnable task files you can import right now
 
 ---
 
@@ -17,8 +23,10 @@ dagRobin add task-id "Description" --deps dep-id --priority 1
 dagRobin ready                    # What can I work on?
 dagRobin claim task-id --agent me # Claim before starting!
 dagRobin update task-id --status done
+dagRobin status                   # How far along is this round? 10/120 (8%)
+dagRobin archive                  # Park finished work before the next round
 dagRobin export tasks.yaml        # Save to file
-dagRobin import tasks.yaml --merge # Load from file
+dagRobin import tasks.yaml        # Load from file
 ```
 
 dagRobin is an external task database that multiple AI agents (Claude, Cowork, OpenRoute, etc.) can query and update simultaneously. No more markdown files, no more "who's working on what?", no more duplicate work.
@@ -112,6 +120,26 @@ dagRobin ready
 
 ## Installation
 
+### npm (easiest — no Rust toolchain needed)
+
+```bash
+npm install -g dagrobin
+dagRobin --version
+```
+
+Install pulls the prebuilt binary for your platform from the matching GitHub release
+and verifies its SHA256. Supported: macOS and Linux, x86_64 and arm64.
+
+### Prebuilt binary
+
+```bash
+# Example: macOS ARM (Apple Silicon)
+curl -L https://github.com/afa7789/dagrobin/releases/latest/download/dagRobin-macos-arm64.tar.gz | tar xz
+sudo mv dagRobin /usr/local/bin/
+```
+
+### From source (Cargo)
+
 ```bash
 # Clone the repo
 git clone https://github.com/afa7789/dagRobin.git
@@ -126,6 +154,8 @@ cargo build --release
 # Or install globally
 cargo install --path .
 ```
+
+Full command reference: **<https://afa7789.github.io/dagrobin/>**
 
 ---
 
@@ -217,6 +247,37 @@ dagRobin update t1 --metadata "notes:a,b,c;tags:tech"
 dagRobin update t1 --metadata "notes:test" --metadata "agent:me"
 ```
 
+### Progress, Archive & Clear
+
+```bash
+# How far is the current round? (archived tasks excluded)
+dagRobin status            # alias: dagRobin progress
+# Round:     10/120 (8%)
+#   pending 108  in_progress 2  blocked 0
+# Archived:  380/380
+# All-time:  390/500 (78%)
+
+dagRobin status --format json   # machine-readable counts
+
+# Before a big round: park finished work so it stops counting
+dagRobin archive                    # archives every Done task (default)
+dagRobin archive t1 t2              # specific ids
+dagRobin archive --status done --status blocked
+dagRobin archive --tags sprint-3
+dagRobin archive --all              # everything still active
+dagRobin archive --undo --all       # bring them back
+
+# Archived tasks stay in the DB but are hidden from list/ready/blocked/status
+dagRobin list --include-archived
+
+# Nuclear option: delete tasks permanently
+dagRobin clear --yes                     # everything
+dagRobin clear --yes --status done       # only done tasks
+dagRobin clear --yes --archived-only     # drop the archive
+```
+
+`archive` keeps history (counted under All-time), `clear` deletes it.
+
 ### Visualization
 
 ```bash
@@ -247,173 +308,167 @@ dagRobin import fresh-start.yaml --replace
 
 ## For AI Agents
 
-dagRobin is designed for autonomous agents working together. Add this to your project's CLAUDE.md or similar:
+dagRobin exists so that autonomous agents can share one task list without stepping
+on each other. The full agent protocol — drop-in blocks for `CLAUDE.md`, shell
+patterns, and the mistakes agents actually make — lives in **[AGENTS.md](./AGENTS.md)**.
+Runnable task files are in **[`examples/`](./examples/)**.
 
-```markdown
-# Task Management
+The short version:
 
-This project uses dagRobin for task coordination.
-
-## Commands
-- `dagRobin ready` - What can I work on?
-- `dagRobin list` - Show all tasks
-- `dagRobin graph --format mermaid` - Visualize dependencies
-
-## Workflow
-1. Start: run `dagRobin ready`
-2. Pick a task, mark it `in_progress` with your agent name
-3. Work on it, mark it `done` when finished
-4. Repeat
+```bash
+dagRobin ready --format yaml        # 1. what is available
+dagRobin claim <id> -a <agent>      # 2. take it — exit 1 means someone else has it
+dagRobin get <id>                   # 3. read metadata.long-description: that is the spec
+# ... do the work, run tests ...
+dagRobin update <id> --status done  # 4. release it
 ```
 
 **Why agents love it:**
 - No more conflicting task lists
 - One place for everything (no `progress.md`, `todo_v2.md`, `done.md`)
 - Fast O(1) lookups instead of parsing files
+- The claim lock is an exit code, so it works from any language or shell
 
 ---
 
 ## Example Prompts for AI Agents
 
-Copy these into your agent prompts to get started:
+Copy these into your agent prompts to get started.
 
-### Basic Agent Prompt
+### Worker agent
 
-```
-You have access to dagRobin for task management. Use it to coordinate your work.
+````markdown
+## Task coordination — dagRobin
 
-Setup:
-1. Run `dagRobin ready` to see what tasks are available
-2. Use `dagRobin claim <task-id> --agent your-name` to claim a task
-3. Complete the task
-4. Mark it as done with `dagRobin update <task-id> --status done`
-5. Run `dagRobin ready` again
+This project coordinates all work through dagRobin. You MUST use it.
 
-Key commands:
-- dagRobin ready --format yaml
-- dagRobin claim <id> --agent your-name
-- dagRobin update <id> --status done
-- dagRobin graph --format mermaid
+Every session starts with `dagRobin ready --format yaml`.
 
-IMPORTANT: If dagRobin claim returns exit code 1, another agent is already working on that task. Pick a different one!
-```
+### The loop
+1. `dagRobin ready --format yaml` — see what is available.
+2. Pick the lowest `priority` number you can actually do.
+3. `dagRobin claim <id> -a <your-agent-name>`
+   - **Exit code 1 means another agent already owns it.** Do not retry.
+     Pick a different task.
+4. `dagRobin get <id>` — read `metadata.long-description`. That is your spec;
+   you do not have the original conversation.
+5. Do the work. Run the project's tests and linter.
+6. `dagRobin update <id> --status done --metadata "notes:<what you did>"`
+7. Back to step 1.
 
-### Full Claude Code Integration
+### If you get stuck
+`dagRobin update <id> --status blocked --metadata "notes:why"`, then say which
+dependency or missing information blocked you.
 
-Add this to your CLAUDE.md file:
+### Rules
+- NEVER work on a task you have not claimed.
+- NEVER invent work that is not in dagRobin. If it needs doing, it needs a task.
+- NEVER mark done without running the project's verification.
+- One task at a time. Finish or block it before claiming another.
+````
 
-```markdown
-# Project Task Management
+### Orchestrator agent
 
-This project uses dagRobin. You MUST use it for all task coordination.
+````markdown
+## dagRobin orchestration
 
-## First Thing You Do
-Every session starts with: dagRobin ready
+You create and assign tasks. You NEVER claim them — claiming is for workers.
 
-## Task Lifecycle
-1. dagRobin ready --format yaml
-2. dagRobin claim <task-id> --agent claudecode
-3. Do the work
-4. dagRobin update <task-id> --status done --metadata "agent:claudecode" --metadata "completed:$(date +%s)"
+### Planning a round
+1. Decompose into 15–20 tasks of 30–60 min each.
+2. Write them to YAML (see `examples/`) and `dagRobin import round-N.yaml`.
+3. Every task carries a `metadata.long-description` complete enough for an agent
+   with zero context, and lists the `files:` it will touch.
 
-## Rules
-- ALWAYS use `dagRobin claim` before starting work
-- If claim fails (exit code 1), pick a different task
-- NEVER work on unclaimed tasks
-- NEVER skip the task system and work on random things
-- When blocked, explain which dependencies are blocking you
-
-## Useful Commands
-dagRobin list                           # See all tasks
-dagRobin blocked                        # What's waiting on something
-dagRobin graph --format mermaid        # Visual overview
-dagRobin check <id>                    # Is this task ready? (exit code 0/1)
-dagRobin conflicts --ready-only        # File conflicts among ready tasks
-```
-
-### Orchestrator Agent Prompt
-
-You are the orchestrator. Your job is to:
-1. Load tasks from dagRobin
-2. Assign tasks to worker agents
-3. Monitor progress
-4. Handle dependencies
-
+### Before dispatching agents in parallel
 ```bash
-# Get tasks ready to work on
-dagRobin ready --format yaml
-
-# Check specific task
-dagRobin check <task-id>
-
-# Assign to agent (update metadata)
-dagRobin update <task-id> --status in_progress --metadata "agent:worker-1"
-
-# Mark complete
-dagRobin update <task-id> --status done
-
-# Check for file conflicts before assigning parallel work
 dagRobin conflicts --ready-only --format json
+```
+Two tasks touching the same file cannot run in parallel. Either add a dependency
+or hand both to the same agent.
 
-# See overall progress
-dagRobin list --format table
-dagRobin graph --format mermaid
+### While the round runs
+```bash
+dagRobin status                        # 12/120 (10%)
+dagRobin ready                         # dispatchable right now
+dagRobin list --status in_progress     # who is working on what
+dagRobin blocked                       # what is stuck, and on what
+dagRobin graph --format mermaid        # visual overview
 ```
 
-### Worker Agent Prompt
+### Closing a round
+```bash
+dagRobin export .claude/tasks-snapshot.yaml
+dagRobin archive
+dagRobin status                        # next round starts at 0/N
+```
+````
 
-You are a worker agent. Your workflow:
+### Race-safe claiming in a shell loop
+
+`claim` failing *is* the lock. Loop over `ready` and take the first successful
+claim — this is safe with any number of agents running at once:
 
 ```bash
-# 1. Ask for work
-dagRobin ready --format yaml
-
-# 2. Claim a task
-dagRobin update <task-id> --status in_progress --metadata "agent:worker-2" --metadata "started:$(date +%s)"
-
-# 3. Do the work (implement the feature, fix the bug, etc)
-
-# 4. Mark complete
-dagRobin update <task-id> --status done --metadata "agent:worker-2" --metadata "completed:$(date +%s)"
-
-# 5. Get next task
-dagRobin ready
+for id in $(dagRobin ready --format json | jq -r '.[].id'); do
+  if dagRobin claim "$id" -a "$AGENT"; then
+    echo "working on $id"
+    break
+  fi
+done
 ```
 
-### Multi-Agent Coordination Example
+### Multi-agent coordination example
 
 ```bash
-# Orchestrator: Create tasks with clear ownership
-dagRobin add auth-worker "Implement authentication" --priority 1 --tags "backend,auth"
-dagRobin add api-worker "Build REST API" --deps auth-worker --priority 2 --tags "backend,api"
-dagRobin add test-worker "Write integration tests" --deps api-worker --priority 3 --tags "testing"
+# Orchestrator: create the round
+dagRobin add auth-worker "Implement authentication" --priority 1 --tags backend
+dagRobin add api-worker  "Build REST API" --deps auth-worker --priority 2 --tags backend
+dagRobin add test-worker "Write integration tests" --deps api-worker --priority 3 --tags testing
+dagRobin conflicts --ready-only        # no two ready tasks share a file
 
-# Worker 1: Claims auth task
-dagRobin update auth-worker --status in_progress --metadata "agent:claudeaude"
-# ... does auth work ...
+# Worker 1
+dagRobin claim auth-worker -a worker-1     # exit 0: it is mine
+# ... work ...
 dagRobin update auth-worker --status done
 
-# Worker 2: Now api-worker is ready, claims it
-dagRobin update api-worker --status in_progress --metadata "agent:worker-2"
-# ... does API work ...
+# Worker 2 — api-worker just became ready
+dagRobin claim api-worker -a worker-2
+# ... work ...
 dagRobin update api-worker --status done
 
-# Worker 3: test-worker now ready
-dagRobin update test-worker --status in_progress --metadata "agent:worker-3"
+# Worker 3 tries the same task Worker 2 already holds
+dagRobin claim api-worker -a worker-3      # exit 1 -> pick something else
+
+# Orchestrator watches
+dagRobin status                            # 2/3 (67%)
 ```
 
 ---
 
 ## Configuration
 
-Database location (defaults to `dagrobin.db` in current folder):
+dagRobin resolves its database the way git finds `.git/`, so subagents running in
+any subdirectory of the project automatically share one database:
+
+| # | Source | Notes |
+|---|---|---|
+| 1 | `-d` / `--db <path>` | Explicit override |
+| 2 | `$DAGROBIN_DB` | Inherited by subprocesses and subagents automatically |
+| 3 | `.dagrobin/db` | Walk-up search from the current directory (`dagRobin init` creates it) |
+| 4 | `~/.local/share/dagRobin/dagrobin.db` | Global fallback |
 
 ```bash
-dagRobin --db ~/.config/dagRobin/mytasks.db list
+dagRobin init                                  # create .dagrobin/db here
+echo '.dagrobin/' >> .gitignore                # per-machine state, not source
+dagRobin which-db                              # prove which database is in use
+
+export DAGROBIN_DB=/tmp/scratch                # scratch database for experiments
+dagRobin --db ~/.config/dagRobin/mytasks.db list   # one-off override
 ```
 
 ---
 
 ## License
 
-MIT OR Apache-2.0 - use it however you want.
+MIT — use it however you want. See [LICENSE](./LICENSE).

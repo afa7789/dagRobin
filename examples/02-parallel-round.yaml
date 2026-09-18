@@ -1,0 +1,83 @@
+# A round built for maximum parallelism: five independent tasks that can all be
+# claimed at once, converging on one integration task.
+#
+# Load it with:  dagRobin import examples/02-parallel-round.yaml
+# Then check:    dagRobin conflicts --ready-only     # must print "no conflicts"
+#
+# Note that no two parallel tasks share a file. That is what makes them safe to
+# dispatch simultaneously — verify it with `conflicts` before you dispatch.
+
+- id: ui-header
+  title: Site header component
+  priority: 2
+  tags: [frontend]
+  files: [src/components/Header.tsx]
+  metadata:
+    long-description: |
+      Header with the logo on the left, nav links in the middle, and the account
+      menu on the right. Collapses to a hamburger below 768px. Keyboard
+      accessible: the menu opens on Enter/Space, closes on Escape, and focus is
+      trapped while open. Uses only the design tokens already in src/styles.
+
+- id: ui-footer
+  title: Site footer component
+  priority: 3
+  tags: [frontend]
+  files: [src/components/Footer.tsx]
+  metadata:
+    long-description: |
+      Three-column footer (product, company, legal) collapsing to one column
+      below 768px. Bottom row: copyright and the theme toggle. No new
+      dependencies; reuse the existing Link component.
+
+- id: ui-table
+  title: Sortable data table
+  priority: 2
+  tags: [frontend]
+  files: [src/components/DataTable.tsx]
+  metadata:
+    long-description: |
+      Generic <DataTable columns rows /> with click-to-sort headers (asc, desc,
+      none), a sticky header, and an empty state. Sorting is client-side and
+      stable. Headers expose aria-sort. No virtualization in this task.
+
+- id: api-search
+  title: Search endpoint
+  priority: 2
+  tags: [backend]
+  files: [src/api/search.rs]
+  metadata:
+    long-description: |
+      GET /search?q=&limit=&offset= with limit defaulting to 20 and capped at
+      100. Full-text search over posts(title, body) using the existing tsvector
+      index. Returns {results: [...], total: n}. An empty q returns 400 with
+      {"error":"q is required"}.
+
+- id: api-cache
+  title: Cache layer for read endpoints
+  priority: 3
+  tags: [backend, perf]
+  files: [src/cache/mod.rs]
+  metadata:
+    long-description: |
+      Redis-backed cache behind a trait so the backing store is swappable
+      (Redis now, in-memory for tests). get/set/invalidate with a TTL per key.
+      Ship an in-memory implementation used by the test suite. Do NOT wire it
+      into any route in this task — wiring happens in integrate-round.
+
+- id: integrate-round
+  title: Wire everything together and verify
+  priority: 1
+  deps: [ui-header, ui-footer, ui-table, api-search, api-cache]
+  tags: [integration]
+  files: [src/App.tsx, src/main.rs]
+  metadata:
+    long-description: |
+      Mount the new components in App.tsx and the new routes in main.rs, and put
+      the cache in front of GET /search with a 60s TTL.
+
+      Add a registration test proving every new route resolves through the
+      COMPOSED app, and a smoke test rendering App with the new components.
+
+      Done when: lint is clean with the complexity rule on, the full test suite
+      is green, and the app builds.
